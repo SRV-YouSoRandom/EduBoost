@@ -70,7 +70,7 @@ const TrackingReportingSchema = z.object({
   kpis: z.array(z.string()).describe("Suggest KPIs like local pack rankings, GMB engagement, organic traffic from target location."),
 });
 
-export const GenerateLocalSEOStrategyOutputSchema = z.object({
+const GenerateLocalSEOStrategyOutputSchema = z.object({
   executiveSummary: z.string().describe("Briefly summarize the proposed local SEO strategy."),
   keywordResearch: KeywordResearchSchema,
   gmbOptimization: GMBOptimizationSchema,
