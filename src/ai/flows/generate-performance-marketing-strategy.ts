@@ -16,11 +16,13 @@ const GeneratePerformanceMarketingStrategyInputSchema = z.object({
   institutionType: z
     .string()
     .describe(
-      'The type of educational institution (e.g., university, college, vocational school).'n    ),
+      'The type of educational institution (e.g., university, college, vocational school).'
+    ),
   targetAudience: z
     .string()
     .describe(
-      'The target audience for the marketing strategy (e.g., prospective students, parents).'n    ),
+      'The target audience for the marketing strategy (e.g., prospective students, parents).'
+    ),
   programmesOffered: z
     .string()
     .describe('A description of the programmes offered by the institution'),
@@ -93,3 +95,4 @@ const generatePerformanceMarketingStrategyFlow = ai.defineFlow(
     return output!;
   }
 );
+
