@@ -8,133 +8,22 @@
  * - generateLocalSEOStrategy - A function that generates a local SEO strategy.
  * - GenerateLocalSEOStrategyInput - The input type for the generateLocalSEOStrategy function.
  * - GenerateLocalSEOStrategyOutput - The return type for the generateLocalSEOStrategy function.
- * - AIKeywordSchema - Zod schema for AI-generated keyword (exported for utils).
- * - AIKpiSchema - Zod schema for AI-generated KPI (exported for utils).
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import type { Status, ItemWithIdAndStatus } from '@/types/common';
 import { mapAiKeywordsToItemsWithStatus, mapAiKpisToItemsWithStatus } from '@/ai/utils/local-seo-mapping-helpers';
+import {
+  GenerateLocalSEOStrategyInputSchema,
+  GenerateLocalSEOStrategyOutputSchema,
+  AIPromptOutputSchema,
+} from '@/ai/schemas/local-seo-schemas';
+import type { 
+  GenerateLocalSEOStrategyInput as LocalSEOInputType, 
+  GenerateLocalSEOStrategyOutput as LocalSEOOutputType 
+} from '@/ai/schemas/local-seo-schemas';
 
-
-export const GenerateLocalSEOStrategyInputSchema = z.object({
-  institutionName: z.string().describe('The name of the educational institution.'),
-  location: z.string().describe('The location of the institution (city, state).'),
-  programsOffered: z.string().describe('A description of the programs offered by the institution.'),
-  targetAudience: z.string().describe('A description of the target audience for the institution.'),
-  websiteUrl: z.string().describe('The URL of the institution\'s website.'),
-});
-
-export type GenerateLocalSEOStrategyInput = z.infer<
-  typeof GenerateLocalSEOStrategyInputSchema
->;
-
-export const KeywordItemWithStatusSchema = z.object({
-  id: z.string().describe('Unique identifier for the item.'),
-  text: z.string().describe('The text content of the item.'),
-  status: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the item.'),
-  searchVolumeLast24h: z.string().optional().describe('Estimated search volume in the last 24 hours for the given location. (e.g., "approx 50 searches", "low", "data unavailable")'),
-  searchVolumeLast7d: z.string().optional().describe('Estimated search volume in the last 7 days for the given location. (e.g., "approx 350 searches", "medium", "data unavailable")'),
-});
-export type KeywordItemWithStatus = z.infer<typeof KeywordItemWithStatusSchema>;
-
-
-const KeywordResearchSchema = z.object({
-  primaryKeywords: z.array(KeywordItemWithStatusSchema).describe("List of 3-5 core local keywords with status and estimated search volumes. Advise using Google Keyword Planner."),
-  secondaryKeywords: z.array(KeywordItemWithStatusSchema).describe("List of 5-7 related keywords with status and estimated search volumes, including program-specific terms."),
-  longTailKeywords: z.array(KeywordItemWithStatusSchema).describe("List of 3-5 examples of long-tail keywords with status and estimated search volumes. Advise using Google Trends."),
-  toolsMention: z.string().describe("Brief mention of tools like Google Keyword Planner and Google Trends.").optional(),
-});
-
-export const GMBOptimizationSchema = z.object({
-  profileCompleteness: z.string().describe("Stress the importance of a 100% complete GMB profile."),
-  napConsistency: z.string().describe("Emphasize consistent Name, Address, Phone number (NAP)."),
-  categories: z.string().describe("Recommend accurate primary and secondary GMB categories."),
-  servicesProducts: z.string().describe("Suggest detailing programs as services/products in GMB."),
-  photosVideos: z.string().describe("Advise on uploading high-quality, regular photos and videos."),
-  gmbPosts: z.string().describe("Recommend a strategy for frequent GMB posts (updates, events, offers)."),
-  qaSection: z.string().describe("Suggest proactively adding common questions and answers."),
-  reviewsStrategy: z.string().describe("Outline strategies for ethically encouraging and responding to reviews."),
-});
-
-export const OnPageSEOSchema = z.object({
-  localizedContent: z.string().describe("Recommend creating location-specific pages or content."),
-  titleTagsMetaDescriptions: z.string().describe("Guide on optimizing title tags and meta descriptions with local keywords."),
-  headerTags: z.string().describe("Explain how to use H1-H6 headers with local keywords."),
-  imageOptimization: z.string().describe("Advise on using local keywords in image alt text and filenames."),
-  localBusinessSchema: z.string().describe("Strongly recommend implementing LocalBusiness schema markup, provide example snippet guidance."),
-});
-
-export const LocalLinkBuildingSchema = z.object({
-  localDirectories: z.string().describe("Suggest relevant local and niche directories."),
-  communityPartnerships: z.string().describe("Recommend partnerships with local organizations for backlinks."),
-  guestPosting: z.string().describe("Suggest guest posting on local blogs or educational sites."),
-  sponsorships: z.string().describe("Mention local event sponsorships for link opportunities."),
-});
-
-export const TechnicalLocalSEOSchema = z.object({
-  mobileFriendliness: z.string().describe("Stress importance (mention Google's Mobile-Friendly Test)."),
-  siteSpeed: z.string().describe("Advise on optimizing site speed (mention Google PageSpeed Insights)."),
-  citationsNapConsistencyCheck: z.string().describe("Reiterate checking and correcting NAP consistency."),
-});
-
-const TrackingReportingSchema = z.object({
-  googleAnalytics: z.string().describe("How to track local traffic and conversions in Google Analytics."),
-  googleSearchConsole: z.string().describe("How to monitor local search performance in Google Search Console."),
-  kpis: z.array(KeywordItemWithStatusSchema).describe("Suggest KPIs like local pack rankings, GMB engagement, organic traffic from target location, each with status."),
-});
-
-export const GenerateLocalSEOStrategyOutputSchema = z.object({
-  executiveSummary: z.string().describe("Briefly summarize the proposed local SEO strategy."),
-  keywordResearch: KeywordResearchSchema,
-  gmbOptimization: GMBOptimizationSchema,
-  onPageLocalSEO: OnPageSEOSchema,
-  localLinkBuilding: LocalLinkBuildingSchema,
-  technicalLocalSEO: TechnicalLocalSEOSchema,
-  trackingReporting: TrackingReportingSchema,
-  conclusion: z.string().describe("Provide a brief concluding statement."),
-});
-export type GenerateLocalSEOStrategyOutput = z.infer<
-  typeof GenerateLocalSEOStrategyOutputSchema
->;
-
-
-// Schema for what the AI prompt is expected to return
-export const AIKeywordSchema = z.object({ // Exported for use in mapping helper
-  text: z.string().describe('The keyword text.'),
-  searchVolumeLast24h: z.string().optional().describe('Estimated search volume in the last 24 hours for the given location. (e.g., "approx 50 searches", "low", "data unavailable")'),
-  searchVolumeLast7d: z.string().optional().describe('Estimated search volume in the last 7 days for the given location. (e.g., "approx 350 searches", "medium", "data unavailable")'),
-});
-
-export const AIKeywordResearchSchema = z.object({
-  primaryKeywords: z.array(AIKeywordSchema).describe("List of 3-5 core local keywords with estimated search volumes."),
-  secondaryKeywords: z.array(AIKeywordSchema).describe("List of 5-7 related keywords with estimated search volumes."),
-  longTailKeywords: z.array(AIKeywordSchema).describe("List of 3-5 examples of long-tail keywords with estimated search volumes."),
-  toolsMention: z.string().describe("Brief mention of tools like Google Keyword Planner and Google Trends.").optional(),
-});
-
-export const AIKpiSchema = z.object({ // Exported for use in mapping helper
-  text: z.string().describe('The KPI description.')
-});
-
-export const AITrackingReportingSchema = z.object({
-  googleAnalytics: z.string(),
-  googleSearchConsole: z.string(),
-  kpis: z.array(AIKpiSchema).describe("Suggest KPIs..."),
-});
-
-const AIPromptOutputSchema = z.object({
-  executiveSummary: z.string(),
-  keywordResearch: AIKeywordResearchSchema,
-  gmbOptimization: GMBOptimizationSchema,
-  onPageLocalSEO: OnPageSEOSchema,
-  localLinkBuilding: LocalLinkBuildingSchema,
-  technicalLocalSEO: TechnicalLocalSEOSchema,
-  trackingReporting: AITrackingReportingSchema,
-  conclusion: z.string(),
-});
-
+export type GenerateLocalSEOStrategyInput = LocalSEOInputType;
+export type GenerateLocalSEOStrategyOutput = LocalSEOOutputType;
 
 export async function generateLocalSEOStrategy(
   input: GenerateLocalSEOStrategyInput
@@ -145,7 +34,7 @@ export async function generateLocalSEOStrategy(
 const prompt = ai.definePrompt({
   name: 'generateLocalSEOStrategyPrompt',
   input: {schema: GenerateLocalSEOStrategyInputSchema},
-  output: {schema: AIPromptOutputSchema},
+  output: {schema: AIPromptOutputSchema}, // AI outputs the structure defined in AIPromptOutputSchema
   prompt: `You are an expert local SEO strategist specializing in educational institutions, with deep knowledge of Google's SEO tools and best practices.
 
   Based on the following information:
@@ -156,7 +45,7 @@ const prompt = ai.definePrompt({
   Website URL: {{{websiteUrl}}}
 
   Generate a comprehensive local SEO strategy as a JSON object.
-  The JSON object MUST conform to the defined output schema (AI version).
+  The JSON object MUST conform to the defined output schema (AI version, referring to AIPromptOutputSchema).
   Each field in the JSON object should contain actionable advice, lists, or summaries as per the schema descriptions.
   For string fields requiring strategic advice, provide concise text. This text can use simple markdown (like bolding for emphasis) if it enhances readability.
   

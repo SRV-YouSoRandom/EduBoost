@@ -9,42 +9,20 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import { 
-  GenerateLocalSEOStrategyInputSchema, 
-  GenerateLocalSEOStrategyOutputSchema,
-  AIKeywordResearchSchema, // The AI output for keywords
-  GMBOptimizationSchema,
-  OnPageSEOSchema,
-  LocalLinkBuildingSchema,
-  TechnicalLocalSEOSchema,
-  AITrackingReportingSchema, // The AI output for tracking
-  KeywordItemWithStatusSchema // Used in the final output
-} from './generate-local-seo-strategy'; 
-import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput } from './generate-local-seo-strategy';
 import { mapAiKeywordsToItemsWithStatus, mapAiKpisToItemsWithStatus } from '@/ai/utils/local-seo-mapping-helpers';
+import {
+  RefineLocalSEOStrategyInputSchema,
+  GenerateLocalSEOStrategyOutputSchema,
+  AIPromptOutputSchema, // Replaces AIPromptOutputSchemaForRefinement as they are identical
+} from '@/ai/schemas/local-seo-schemas';
+import type { 
+  RefineLocalSEOStrategyInput as RefineInputType, 
+  GenerateLocalSEOStrategyOutput as LocalSEOOutputType,
+  GenerateLocalSEOStrategyInput, // For institutionContext type within RefineLocalSEOStrategyInput
+} from '@/ai/schemas/local-seo-schemas';
 
-
-export const RefineLocalSEOStrategyInputSchema = z.object({
-  currentStrategy: GenerateLocalSEOStrategyOutputSchema.describe("The existing Local SEO strategy JSON object."),
-  userPrompt: z.string().describe("The user's prompt detailing the desired modifications or additions to the strategy."),
-  institutionContext: GenerateLocalSEOStrategyInputSchema.describe("The original context of the educational institution."),
-});
-export type RefineLocalSEOStrategyInput = z.infer<typeof RefineLocalSEOStrategyInputSchema>;
-
-// The AI will be prompted to output the same structure as the original generation,
-// but it will be based on refining the existing strategy.
-const AIPromptOutputSchemaForRefinement = z.object({
-  executiveSummary: z.string(),
-  keywordResearch: AIKeywordResearchSchema, // AI directly outputs this structure
-  gmbOptimization: GMBOptimizationSchema,
-  onPageLocalSEO: OnPageSEOSchema,
-  localLinkBuilding: LocalLinkBuildingSchema,
-  technicalLocalSEO: TechnicalLocalSEOSchema,
-  trackingReporting: AITrackingReportingSchema, // AI directly outputs this structure
-  conclusion: z.string(),
-});
-
+export type RefineLocalSEOStrategyInput = RefineInputType;
+export type GenerateLocalSEOStrategyOutput = LocalSEOOutputType; // Output type for refinement is same as generation
 
 export async function refineLocalSEOStrategy(
   input: RefineLocalSEOStrategyInput
@@ -55,7 +33,7 @@ export async function refineLocalSEOStrategy(
 const refinePrompt = ai.definePrompt({
   name: 'refineLocalSEOStrategyPrompt',
   input: {schema: RefineLocalSEOStrategyInputSchema},
-  output: {schema: AIPromptOutputSchemaForRefinement}, // AI returns the refined structure
+  output: {schema: AIPromptOutputSchema}, // AI returns the refined structure based on AIPromptOutputSchema
   prompt: `You are an expert local SEO strategist. You are given an existing Local SEO strategy for an educational institution and a user prompt asking for modifications.
 Institution Context:
   Name: {{institutionContext.institutionName}}
@@ -74,14 +52,13 @@ User's Refinement Request: "{{userPrompt}}"
 Based on the user's request, refine the existing strategy.
 - If the user asks to add or analyze keywords, update the 'keywordResearch' section accordingly. Provide estimated search volumes for new keywords if possible, similar to the existing format. Preserve existing keywords unless specified otherwise.
 - If the request concerns other sections (e.g., GMB, on-page SEO, link building), modify those parts.
-- Ensure the entire output is a single, valid JSON object conforming to the AI output schema.
+- Ensure the entire output is a single, valid JSON object conforming to the AI output schema (AIPromptOutputSchema).
 - Maintain the overall structure and try to preserve IDs and statuses for items not directly affected by the prompt, if applicable (though for keywords, you'll be generating the text and search volumes).
 - For keyword arrays in 'keywordResearch' (primaryKeywords, secondaryKeywords, longTailKeywords), each item MUST be an object with "text", "searchVolumeLast24h", and "searchVolumeLast7d".
 - For the 'kpis' array in 'trackingReporting', each item MUST be an object with "text".
 
 Return the complete, updated strategy as a JSON object.
   `,
-  // Custom Handlebars helper to stringify the currentStrategy JSON
   helpers: {
     jsonEncode: (context: any) => JSON.stringify(context, null, 2),
   }
@@ -98,6 +75,8 @@ const refineLocalSEOStrategyFlow = ai.defineFlow(
 
     if (!aiRefinedOutput) {
       console.error("AI failed to generate valid structured output for Local SEO Strategy refinement.");
+      // Consider returning the original strategy or a more specific error structure
+      // For now, throwing an error as per previous logic.
       throw new Error("Failed to refine local SEO strategy. The AI model did not return the expected data structure.");
     }
     
