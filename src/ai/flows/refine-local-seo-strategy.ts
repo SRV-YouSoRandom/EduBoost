@@ -1,3 +1,4 @@
+// src/ai/flows/refine-local-seo-strategy.ts
 'use server';
 /**
  * @fileOverview Refines an existing Local SEO strategy based on user prompts.
@@ -12,17 +13,17 @@ import {z} from 'genkit';
 import { 
   GenerateLocalSEOStrategyInputSchema, 
   GenerateLocalSEOStrategyOutputSchema,
-  KeywordResearchSchema as AIKeywordResearchSchema, // The AI output for keywords
+  AIKeywordResearchSchema, // The AI output for keywords
   GMBOptimizationSchema,
   OnPageSEOSchema,
   LocalLinkBuildingSchema,
   TechnicalLocalSEOSchema,
   AITrackingReportingSchema, // The AI output for tracking
-  mapAiKeywordsToItemsWithStatus, // Helper function from generate-local-seo-strategy
-  mapAiKpisToItemsWithStatus,      // Helper function from generate-local-seo-strategy
   KeywordItemWithStatusSchema // Used in the final output
 } from './generate-local-seo-strategy'; 
 import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput } from './generate-local-seo-strategy';
+import { mapAiKeywordsToItemsWithStatus, mapAiKpisToItemsWithStatus } from '@/ai/utils/local-seo-mapping-helpers';
+
 
 export const RefineLocalSEOStrategyInputSchema = z.object({
   currentStrategy: GenerateLocalSEOStrategyOutputSchema.describe("The existing Local SEO strategy JSON object."),

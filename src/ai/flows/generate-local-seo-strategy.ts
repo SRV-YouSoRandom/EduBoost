@@ -8,11 +8,15 @@
  * - generateLocalSEOStrategy - A function that generates a local SEO strategy.
  * - GenerateLocalSEOStrategyInput - The input type for the generateLocalSEOStrategy function.
  * - GenerateLocalSEOStrategyOutput - The return type for the generateLocalSEOStrategy function.
+ * - AIKeywordSchema - Zod schema for AI-generated keyword (exported for utils).
+ * - AIKpiSchema - Zod schema for AI-generated KPI (exported for utils).
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import type { Status, ItemWithIdAndStatus } from '@/types/common'; // ItemWithIdAndStatus will be used
+import type { Status, ItemWithIdAndStatus } from '@/types/common';
+import { mapAiKeywordsToItemsWithStatus, mapAiKpisToItemsWithStatus } from '@/ai/utils/local-seo-mapping-helpers';
+
 
 export const GenerateLocalSEOStrategyInputSchema = z.object({
   institutionName: z.string().describe('The name of the educational institution.'),
@@ -26,9 +30,6 @@ export type GenerateLocalSEOStrategyInput = z.infer<
   typeof GenerateLocalSEOStrategyInputSchema
 >;
 
-// Re-using ItemWithIdAndStatus from common types by extending it in the output if needed,
-// or ensuring the AI prompt output schema aligns for easy mapping.
-// Here, ItemWithStatusSchema is defined locally but aligns with ItemWithIdAndStatus + search volumes.
 export const KeywordItemWithStatusSchema = z.object({
   id: z.string().describe('Unique identifier for the item.'),
   text: z.string().describe('The text content of the item.'),
@@ -81,7 +82,7 @@ export const TechnicalLocalSEOSchema = z.object({
 const TrackingReportingSchema = z.object({
   googleAnalytics: z.string().describe("How to track local traffic and conversions in Google Analytics."),
   googleSearchConsole: z.string().describe("How to monitor local search performance in Google Search Console."),
-  kpis: z.array(KeywordItemWithStatusSchema).describe("Suggest KPIs like local pack rankings, GMB engagement, organic traffic from target location, each with status."), // Reusing KeywordItemWithStatusSchema for similar structure for KPIs.
+  kpis: z.array(KeywordItemWithStatusSchema).describe("Suggest KPIs like local pack rankings, GMB engagement, organic traffic from target location, each with status."),
 });
 
 export const GenerateLocalSEOStrategyOutputSchema = z.object({
@@ -100,24 +101,24 @@ export type GenerateLocalSEOStrategyOutput = z.infer<
 
 
 // Schema for what the AI prompt is expected to return
-const AIKeywordSchema = z.object({
+export const AIKeywordSchema = z.object({ // Exported for use in mapping helper
   text: z.string().describe('The keyword text.'),
   searchVolumeLast24h: z.string().optional().describe('Estimated search volume in the last 24 hours for the given location. (e.g., "approx 50 searches", "low", "data unavailable")'),
   searchVolumeLast7d: z.string().optional().describe('Estimated search volume in the last 7 days for the given location. (e.g., "approx 350 searches", "medium", "data unavailable")'),
 });
 
-export const AIKeywordResearchSchema = z.object({ // Exported for reuse in refinement flow
+export const AIKeywordResearchSchema = z.object({
   primaryKeywords: z.array(AIKeywordSchema).describe("List of 3-5 core local keywords with estimated search volumes."),
   secondaryKeywords: z.array(AIKeywordSchema).describe("List of 5-7 related keywords with estimated search volumes."),
   longTailKeywords: z.array(AIKeywordSchema).describe("List of 3-5 examples of long-tail keywords with estimated search volumes."),
   toolsMention: z.string().describe("Brief mention of tools like Google Keyword Planner and Google Trends.").optional(),
 });
 
-const AIKpiSchema = z.object({ // KPIs also have text, but not search volume.
+export const AIKpiSchema = z.object({ // Exported for use in mapping helper
   text: z.string().describe('The KPI description.')
 });
 
-export const AITrackingReportingSchema = z.object({ // Exported for reuse in refinement flow
+export const AITrackingReportingSchema = z.object({
   googleAnalytics: z.string(),
   googleSearchConsole: z.string(),
   kpis: z.array(AIKpiSchema).describe("Suggest KPIs..."),
@@ -181,24 +182,6 @@ const prompt = ai.definePrompt({
   `,
 });
 
-export const mapAiKeywordsToItemsWithStatus = (aiKeywords: z.infer<typeof AIKeywordSchema>[]): KeywordItemWithStatus[] => {
-  return aiKeywords.map(keyword => ({
-    id: crypto.randomUUID(),
-    text: keyword.text,
-    status: 'pending' as Status,
-    searchVolumeLast24h: keyword.searchVolumeLast24h,
-    searchVolumeLast7d: keyword.searchVolumeLast7d,
-  }));
-};
-
-export const mapAiKpisToItemsWithStatus = (aiKpis: z.infer<typeof AIKpiSchema>[]): KeywordItemWithStatus[] => {
-  return aiKpis.map(kpi => ({
-    id: crypto.randomUUID(),
-    text: kpi.text,
-    status: 'pending' as Status,
-    // searchVolume fields are not applicable for KPIs, will be undefined
-  }));
-};
 
 const generateLocalSEOStrategyFlow = ai.defineFlow(
   {
