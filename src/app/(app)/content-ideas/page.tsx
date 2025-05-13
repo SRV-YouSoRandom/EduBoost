@@ -41,16 +41,6 @@ const formSchema = z.object({
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
 
-const truncateTextByWords = (text: string, wordLimit: number): string => {
-  if (!text) return "";
-  const words = text.split(/\s+/); // Split by any whitespace
-  if (words.length > wordLimit) {
-    return words.slice(0, wordLimit).join(" ") + "...";
-  }
-  return text;
-};
-
-
 export default function ContentIdeasPage() {
   const { toast } = useToast();
   const { activeInstitution, isLoading: isInstitutionLoading } = useInstitutions();
@@ -327,10 +317,16 @@ export default function ContentIdeasPage() {
                     <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
                       <div className="w-full flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="flex-1 justify-start text-left px-0 text-base items-center min-w-0">
+                          <Button 
+                            variant="ghost" 
+                            className={cn(
+                              "flex-1 justify-start text-left px-0 text-base items-center min-w-0",
+                              "md:max-w-3/5" // Constrain width on medium screens and up
+                            )}
+                          >
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
-                             <span className="flex-1 font-medium min-w-0" title={idea.text}>
-                               {truncateTextByWords(idea.text, 20)}
+                             <span className="flex-1 font-medium min-w-0 truncate" title={idea.text}>
+                               {idea.text}
                              </span>
                           </Button>
                         </CollapsibleTrigger>
@@ -461,3 +457,4 @@ export default function ContentIdeasPage() {
     </div>
   );
 }
+
