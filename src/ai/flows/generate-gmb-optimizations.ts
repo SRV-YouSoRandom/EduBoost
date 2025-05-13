@@ -1,3 +1,4 @@
+
 // Use server directive is required for Genkit flows.
 'use server';
 /**
@@ -57,7 +58,7 @@ const AIKeywordSuggestionSchema = z.object({
 const PromptOutputSchema = z.object({
   keywordSuggestions: z.array(AIKeywordSuggestionSchema).describe('An array of keyword suggestion objects for the GMB profile, including estimated search volumes.'),
   descriptionSuggestions: z.string().describe('Suggested GMB business description in markdown format, highlighting unique selling points and programs.'),
-  optimizationTips: z.string().describe('Additional GMB optimization tips in markdown format, covering posts, Q&A, photos, services, and reviews, referencing Google My Business features.'),
+  optimizationTips: z.string().describe('Additional GMB optimization tips in markdown format, covering posts, Q&A, photos, services, and reviews, referencing Google My Business features.')
 });
 
 
@@ -145,4 +146,9 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
     };
   }
 );
+
+// Ensure this file only exports the async function and types if it's being treated as a server action module.
+// Schemas are defined above but not exported if GenerateGMBOptimizationsInputSchema is causing issues.
+// For now, assuming the current export structure is fine based on prior fixes focusing on top-level exports.
+// If error persists for this file, GenerateGMBOptimizationsInputSchema might need to be moved.
 

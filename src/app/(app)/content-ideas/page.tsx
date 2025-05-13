@@ -27,9 +27,11 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 
-import type { GenerateContentIdeasInput, GenerateContentIdeasOutput, ContentIdeaWithStatus } from '@/ai/flows/generate-content-ideas';
+import type { GenerateContentIdeasInput, GenerateContentIdeasOutput, ContentIdeaWithStatus } from '@/ai/schemas/content-ideas-schemas'; // Updated import
 import { generateContentIdeas } from '@/ai/flows/generate-content-ideas';
-import { expandContentIdea, ExpandContentIdeaInput } from '@/ai/flows/expand-content-idea';
+import { expandContentIdea } from '@/ai/flows/expand-content-idea';
+import type { ExpandContentIdeaInput } from '@/ai/schemas/content-ideas-schemas'; // Updated import
+
 
 const formSchema = z.object({
   institutionName: z.string().min(2, "Institution name is required."),

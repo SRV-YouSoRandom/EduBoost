@@ -8,25 +8,19 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import { GenerateContentIdeasInputSchema } from './generate-content-ideas'; // Re-use schema for context
+import {
+  ExpandContentIdeaInputSchema,
+  ExpandContentIdeaOutputSchema,
+  GenerateContentIdeasInputSchema, // Used by ExpandContentIdeaInputSchema for institutionContext
+} from '@/ai/schemas/content-ideas-schemas';
 
-const ExpandContentIdeaInputSchema = z.object({
-  ideaText: z.string().describe('The content idea text to be expanded.'),
-  institutionContext: GenerateContentIdeasInputSchema.describe('The context of the educational institution for tailoring the expansion.'),
-});
-export type ExpandContentIdeaInput = z.infer<typeof ExpandContentIdeaInputSchema>;
+// Export types for external use
+export type { ExpandContentIdeaInput, ExpandContentIdeaOutput, GenerateContentIdeasInput } from '@/ai/schemas/content-ideas-schemas';
 
-const ExpandContentIdeaOutputSchema = z.object({
-  expandedDetails: z
-    .string()
-    .describe('Detailed script, outline, or explanation for the content idea, in markdown format.'),
-});
-export type ExpandContentIdeaOutput = z.infer<typeof ExpandContentIdeaOutputSchema>;
 
 export async function expandContentIdea(
-  input: ExpandContentIdeaInput
-): Promise<ExpandContentIdeaOutput> {
+  input: import('@/ai/schemas/content-ideas-schemas').ExpandContentIdeaInput
+): Promise<import('@/ai/schemas/content-ideas-schemas').ExpandContentIdeaOutput> {
   return expandContentIdeaFlow(input);
 }
 

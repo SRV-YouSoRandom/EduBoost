@@ -8,53 +8,27 @@
  * - generateContentIdeas - A function that generates content ideas.
  * - GenerateContentIdeasInput - The input type for the generateContentIdeas function.
  * - GenerateContentIdeasOutput - The return type for the generateContentIdeas function.
- * - GenerateContentIdeasInputSchema - The Zod schema for the input.
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import type { Status } from '@/types/common'; // Import Status type
+import type { Status } from '@/types/common';
+import {
+  GenerateContentIdeasInputSchema,
+  GenerateContentIdeasOutputSchema,
+  GenerateContentIdeasPromptOutputSchema,
+  ContentIdeaWithStatusSchema, // Used for mapping
+} from '@/ai/schemas/content-ideas-schemas';
+import type { 
+  GenerateContentIdeasInput as GenerateContentIdeasInputType, 
+  GenerateContentIdeasOutput as GenerateContentIdeasOutputType,
+  ContentIdeaWithStatus as ContentIdeaWithStatusType,
+} from '@/ai/schemas/content-ideas-schemas';
 
-export const GenerateContentIdeasInputSchema = z.object({
-  institutionName: z.string().describe('The name of the educational institution.'),
-  institutionType: z
-    .string()
-    .describe(
-      'The type of educational institution (e.g., university, high school, elementary school).' 
-    ),
-  targetAudience: z
-    .string()
-    .describe(
-      'The target audience for the content (e.g., prospective students, current students, parents, faculty).' 
-    ),
-  programsOffered: z
-    .string()
-    .describe('A description of the programs offered by the institution.'),
-  uniqueSellingPoints: z
-    .string()
-    .describe('The unique selling points of the educational institution.'),
-});
-export type GenerateContentIdeasInput = z.infer<
-  typeof GenerateContentIdeasInputSchema
->;
 
-const ContentIdeaWithStatusSchema = z.object({
-  id: z.string().describe('Unique identifier for the content idea.'),
-  text: z.string().describe('The content idea text.'),
-  status: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the content idea.'),
-  expandedDetails: z.string().optional().describe('Generated detailed script or explanation for the content idea.'),
-  isExpanding: z.boolean().optional().describe('Flag to indicate if details are currently being expanded for this idea.'),
-});
-export type ContentIdeaWithStatus = z.infer<typeof ContentIdeaWithStatusSchema>;
+export type GenerateContentIdeasInput = GenerateContentIdeasInputType;
+export type GenerateContentIdeasOutput = GenerateContentIdeasOutputType;
+export type ContentIdeaWithStatus = ContentIdeaWithStatusType;
 
-const GenerateContentIdeasOutputSchema = z.object({
-  contentIdeas: z
-    .array(ContentIdeaWithStatusSchema)
-    .describe('A list of content ideas tailored to the educational institution, each with an ID and status.'),
-});
-export type GenerateContentIdeasOutput = z.infer<
-  typeof GenerateContentIdeasOutputSchema
->;
 
 export async function generateContentIdeas(
   input: GenerateContentIdeasInput
@@ -62,15 +36,10 @@ export async function generateContentIdeas(
   return generateContentIdeasFlow(input);
 }
 
-// Prompt output schema remains as array of strings
-const PromptOutputSchema = z.object({
-  contentIdeas: z.array(z.string()).describe('A list of content idea strings.'),
-});
-
 const prompt = ai.definePrompt({
   name: 'generateContentIdeasPrompt',
   input: {schema: GenerateContentIdeasInputSchema},
-  output: {schema: PromptOutputSchema}, // AI generates strings
+  output: {schema: GenerateContentIdeasPromptOutputSchema}, // AI generates strings
   prompt: `You are a creative content strategist specializing in the educational sector. Generate content ideas for {{institutionName}}, a {{institutionType}}, targeting {{targetAudience}}. The institution offers the following programs: {{programsOffered}}. Its unique selling points are: {{uniqueSellingPoints}}. Please provide a list of content ideas that will resonate with the target audience. Ensure each idea is a distinct string in the array.`,
 });
 
@@ -95,4 +64,3 @@ const generateContentIdeasFlow = ai.defineFlow(
     return { contentIdeas: [] }; // Fallback or error case
   }
 );
-
