@@ -1,11 +1,13 @@
 
--- Enable UUID generation
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Enable pg_cron if not already enabled (Supabase does this by default on new projects)
+-- CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- Enable pgcrypto for gen_random_uuid() if not enabled
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Create institutions table
-CREATE TABLE public.institutions (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id uuid, -- Can be linked to auth.users.id if auth is implemented
+-- Institutions Table
+CREATE TABLE institutions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID, -- Will be linked to auth.users(id) if/when auth is implemented
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     location TEXT NOT NULL,
@@ -13,168 +15,178 @@ CREATE TABLE public.institutions (
     target_audience TEXT NOT NULL,
     unique_selling_points TEXT NOT NULL,
     website_url TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+COMMENT ON COLUMN institutions.user_id IS 'Placeholder for user ownership if authentication is added.';
 
--- Add comments for institutions table
-COMMENT ON TABLE public.institutions IS 'Stores information about educational institutions.';
-COMMENT ON COLUMN public.institutions.user_id IS 'Optional link to the user who created/owns this institution.';
-
--- Create content_ideas table
-CREATE TABLE public.content_ideas (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    institution_id uuid NOT NULL REFERENCES public.institutions(id) ON DELETE CASCADE,
-    user_id uuid, -- Optional link to the user
+-- Content Ideas Table
+CREATE TABLE content_ideas (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    institution_id UUID REFERENCES institutions(id) ON DELETE CASCADE,
+    user_id UUID, -- To be linked to auth.users(id) later
     ideas_data JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT content_ideas_institution_id_key UNIQUE (institution_id) -- Ensures one row per institution
 );
 
-COMMENT ON TABLE public.content_ideas IS 'Stores AI-generated content ideas for institutions.';
-COMMENT ON COLUMN public.content_ideas.ideas_data IS 'JSONB blob containing the generated content ideas and their statuses.';
-
--- Create gmb_optimizations table
-CREATE TABLE public.gmb_optimizations (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    institution_id uuid NOT NULL REFERENCES public.institutions(id) ON DELETE CASCADE,
-    user_id uuid, -- Optional link to the user
+-- GMB Optimizations Table
+CREATE TABLE gmb_optimizations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    institution_id UUID REFERENCES institutions(id) ON DELETE CASCADE,
+    user_id UUID,
     optimization_data JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT gmb_optimizations_institution_id_key UNIQUE (institution_id) -- Ensures one row per institution
 );
 
-COMMENT ON TABLE public.gmb_optimizations IS 'Stores AI-generated GMB optimization suggestions.';
-COMMENT ON COLUMN public.gmb_optimizations.optimization_data IS 'JSONB blob containing GMB keywords, descriptions, and tips.';
-
--- Create local_seo_strategies table
-CREATE TABLE public.local_seo_strategies (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    institution_id uuid NOT NULL REFERENCES public.institutions(id) ON DELETE CASCADE,
-    user_id uuid, -- Optional link to the user
+-- Local SEO Strategies Table
+CREATE TABLE local_seo_strategies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    institution_id UUID REFERENCES institutions(id) ON DELETE CASCADE,
+    user_id UUID,
     strategy_data JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT local_seo_strategies_institution_id_key UNIQUE (institution_id) -- Ensures one row per institution
 );
 
-COMMENT ON TABLE public.local_seo_strategies IS 'Stores AI-generated local SEO strategies.';
-COMMENT ON COLUMN public.local_seo_strategies.strategy_data IS 'JSONB blob containing the full local SEO strategy document.';
-
--- Create performance_marketing_strategies table
-CREATE TABLE public.performance_marketing_strategies (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    institution_id uuid NOT NULL REFERENCES public.institutions(id) ON DELETE CASCADE,
-    user_id uuid, -- Optional link to the user
+-- Performance Marketing Strategies Table
+CREATE TABLE performance_marketing_strategies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    institution_id UUID REFERENCES institutions(id) ON DELETE CASCADE,
+    user_id UUID,
     strategy_data JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT performance_marketing_strategies_institution_id_key UNIQUE (institution_id) -- Ensures one row per institution
 );
 
-COMMENT ON TABLE public.performance_marketing_strategies IS 'Stores AI-generated performance marketing strategies.';
-COMMENT ON COLUMN public.performance_marketing_strategies.strategy_data IS 'JSONB blob containing the performance marketing strategy document.';
 
--- Function to update "updated_at" column
-CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+-- Function to update 'updated_at' timestamp
+CREATE OR REPLACE FUNCTION trigger_set_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
+  NEW.updated_at = NOW();
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Triggers to update "updated_at" on table modifications
-CREATE TRIGGER update_institutions_updated_at
-BEFORE UPDATE ON public.institutions
-FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+-- Triggers for 'updated_at' on all tables
+CREATE TRIGGER set_institutions_timestamp
+BEFORE UPDATE ON institutions
+FOR EACH ROW
+EXECUTE FUNCTION trigger_set_timestamp();
 
-CREATE TRIGGER update_content_ideas_updated_at
-BEFORE UPDATE ON public.content_ideas
-FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER set_content_ideas_timestamp
+BEFORE UPDATE ON content_ideas
+FOR EACH ROW
+EXECUTE FUNCTION trigger_set_timestamp();
 
-CREATE TRIGGER update_gmb_optimizations_updated_at
-BEFORE UPDATE ON public.gmb_optimizations
-FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER set_gmb_optimizations_timestamp
+BEFORE UPDATE ON gmb_optimizations
+FOR EACH ROW
+EXECUTE FUNCTION trigger_set_timestamp();
 
-CREATE TRIGGER update_local_seo_strategies_updated_at
-BEFORE UPDATE ON public.local_seo_strategies
-FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER set_local_seo_strategies_timestamp
+BEFORE UPDATE ON local_seo_strategies
+FOR EACH ROW
+EXECUTE FUNCTION trigger_set_timestamp();
 
-CREATE TRIGGER update_performance_marketing_strategies_updated_at
-BEFORE UPDATE ON public.performance_marketing_strategies
-FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+CREATE TRIGGER set_performance_marketing_strategies_timestamp
+BEFORE UPDATE ON performance_marketing_strategies
+FOR EACH ROW
+EXECUTE FUNCTION trigger_set_timestamp();
 
 
--- ROW LEVEL SECURITY (RLS) POLICIES
--- These are permissive policies for initial development using the anon key.
--- IMPORTANT: For production, these policies MUST be reviewed and tightened,
--- especially when user authentication is fully implemented. They should typically
--- be scoped to `auth.uid() = user_id`.
-
+-- Row Level Security (RLS)
 -- Enable RLS for all tables
-ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.content_ideas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.gmb_optimizations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.local_seo_strategies ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.performance_marketing_strategies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE institutions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_ideas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gmb_optimizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE local_seo_strategies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE performance_marketing_strategies ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies for 'institutions' table
-DROP POLICY IF EXISTS "Allow anon full access to institutions" ON public.institutions;
-CREATE POLICY "Allow anon full access to institutions"
-ON public.institutions
-FOR ALL
-TO anon -- Applies to anonymous users
-USING (true) -- Allows all rows to be visible/queried
-WITH CHECK (true); -- Allows all inserts/updates
+-- Permissive RLS policies for 'anon' role (for initial development without auth)
+-- WARNING: These are for development. Replace with user-specific policies for production.
 
--- RLS Policies for 'content_ideas' table
-DROP POLICY IF EXISTS "Allow anon full access to content_ideas" ON public.content_ideas;
-CREATE POLICY "Allow anon full access to content_ideas"
-ON public.content_ideas
+CREATE POLICY "Anon user can perform all operations on institutions"
+ON institutions
 FOR ALL
 TO anon
 USING (true)
 WITH CHECK (true);
 
--- RLS Policies for 'gmb_optimizations' table
-DROP POLICY IF EXISTS "Allow anon full access to gmb_optimizations" ON public.gmb_optimizations;
-CREATE POLICY "Allow anon full access to gmb_optimizations"
-ON public.gmb_optimizations
+CREATE POLICY "Anon user can perform all operations on content_ideas"
+ON content_ideas
 FOR ALL
 TO anon
 USING (true)
 WITH CHECK (true);
 
--- RLS Policies for 'local_seo_strategies' table
-DROP POLICY IF EXISTS "Allow anon full access to local_seo_strategies" ON public.local_seo_strategies;
-CREATE POLICY "Allow anon full access to local_seo_strategies"
-ON public.local_seo_strategies
+CREATE POLICY "Anon user can perform all operations on gmb_optimizations"
+ON gmb_optimizations
 FOR ALL
 TO anon
 USING (true)
 WITH CHECK (true);
 
--- RLS Policies for 'performance_marketing_strategies' table
-DROP POLICY IF EXISTS "Allow anon full access to performance_marketing_strategies" ON public.performance_marketing_strategies;
-CREATE POLICY "Allow anon full access to performance_marketing_strategies"
-ON public.performance_marketing_strategies
+CREATE POLICY "Anon user can perform all operations on local_seo_strategies"
+ON local_seo_strategies
 FOR ALL
 TO anon
 USING (true)
 WITH CHECK (true);
 
--- Note on future RLS with authentication:
--- When user authentication is added, you would typically change policies to something like:
---
--- For SELECT on 'institutions':
--- CREATE POLICY "Users can select their own institutions"
--- ON public.institutions
--- FOR SELECT USING (auth.uid() = user_id);
---
--- For INSERT on 'institutions':
--- CREATE POLICY "Users can insert new institutions for themselves"
--- ON public.institutions
--- FOR INSERT WITH CHECK (auth.uid() = user_id);
---
--- And similarly for UPDATE and DELETE, and for the other strategy tables,
--- ensuring that operations are tied to the authenticated user's ID.
--- The 'anon' role policies would then likely be removed or restricted further.
+CREATE POLICY "Anon user can perform all operations on performance_marketing_strategies"
+ON performance_marketing_strategies
+FOR ALL
+TO anon
+USING (true)
+WITH CHECK (true);
+
+/*
+-- NOTES FOR PRODUCTION RLS (when user authentication is implemented):
+-- Assuming 'user_id' column in each table stores the auth.uid() of the owner.
+
+-- For 'institutions' table:
+DROP POLICY IF EXISTS "Anon user can perform all operations on institutions" ON institutions;
+DROP POLICY IF EXISTS "Authenticated users can manage their own institutions" ON institutions;
+
+CREATE POLICY "Authenticated users can manage their own institutions"
+ON institutions
+FOR ALL
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- For 'content_ideas' table (and similarly for other strategy tables):
+DROP POLICY IF EXISTS "Anon user can perform all operations on content_ideas" ON content_ideas;
+DROP POLICY IF EXISTS "Authenticated users can manage their own content ideas" ON content_ideas;
+
+CREATE POLICY "Authenticated users can manage their own content ideas"
+ON content_ideas
+FOR ALL
+TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- Repeat similar policies for gmb_optimizations, local_seo_strategies, performance_marketing_strategies
+-- adjusting user_id column as necessary if it's directly on the strategy table or via join to institutions.
+-- If strategy tables' user_id is a denormalization of institutions.user_id, the above is fine.
+-- If strategy tables should only be accessible if the user owns the PARENT institution, the policy would be:
+-- USING (EXISTS (SELECT 1 FROM institutions i WHERE i.id = institution_id AND i.user_id = auth.uid()))
+-- WITH CHECK (EXISTS (SELECT 1 FROM institutions i WHERE i.id = institution_id AND i.user_id = auth.uid()));
+*/
+
+-- Seed data (Optional - uncomment and modify if needed for development)
+/*
+INSERT INTO institutions (name, type, location, programs_offered, target_audience, unique_selling_points, website_url) VALUES
+('Demo University', 'University', 'Online', 'Computer Science, Business Administration', 'Prospective undergraduate and graduate students', 'Flexible online learning, Industry-relevant curriculum', 'https://example.edu'),
+('Little Coders Academy', 'Coding Bootcamp', 'San Francisco, CA', 'Full-Stack Web Development, Data Science', 'Career changers, Aspiring developers', 'Job guarantee, Intensive hands-on projects', 'https://example.com/littlecoders');
+*/
+
+SELECT 'Supabase setup script completed successfully.';
+SELECT 'IMPORTANT: If you ran a previous version of this script, you might need to drop and recreate the strategy tables (content_ideas, gmb_optimizations, local_seo_strategies, performance_marketing_strategies) or manually add UNIQUE constraints on their institution_id columns for upserts to work correctly.';
