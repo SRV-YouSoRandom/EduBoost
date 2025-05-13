@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -110,7 +111,7 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
             <ListWithStatusDisplay title="Primary Keywords" items={keywordData.primaryKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
             <ListWithStatusDisplay title="Secondary Keywords" items={keywordData.secondaryKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
             <ListWithStatusDisplay title="Long-Tail Keywords" items={keywordData.longTailKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
-            {keywordData.toolsMention && <div><strong>Tools Mentioned:</strong> <MarkdownDisplay content={keywordData.toolsMention} asCard={false} className="text-sm inline"/></div>}
+            {keywordData.toolsMention && <div className="text-sm"><strong>Tools Mentioned:</strong> <MarkdownDisplay content={keywordData.toolsMention} asCard={false} />}</div>}
           </div>
         );
       }
@@ -118,8 +119,8 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
         const trackingData = data as GenerateLocalSEOStrategyOutput['trackingReporting'];
         return (
           <div className="space-y-4">
-            {trackingData.googleAnalytics && <p><strong>Google Analytics:</strong> <MarkdownDisplay content={trackingData.googleAnalytics} asCard={false} className="text-sm inline" /></p>}
-            {trackingData.googleSearchConsole && <p><strong>Google Search Console:</strong> <MarkdownDisplay content={trackingData.googleSearchConsole} asCard={false} className="text-sm inline" /></p>}
+            {trackingData.googleAnalytics && <div className="text-sm"><strong>Google Analytics:</strong> <MarkdownDisplay content={trackingData.googleAnalytics} asCard={false} /></div>}
+            {trackingData.googleSearchConsole && <div className="text-sm"><strong>Google Search Console:</strong> <MarkdownDisplay content={trackingData.googleSearchConsole} asCard={false} /></div>}
             <ListWithStatusDisplay 
               title="Key Performance Indicators (KPIs)" 
               items={trackingData.kpis || []} 
@@ -132,20 +133,16 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
         <div className="space-y-2">
           {Object.entries(data).map(([key, value]) => {
             const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-            // Check if value is a string before rendering with MarkdownDisplay
             if (typeof value === 'string') {
               return (
-                <div key={key}>
+                <div key={key} className="text-sm">
                   <strong className="capitalize">{formattedKey}: </strong> 
-                  <MarkdownDisplay content={value} asCard={false} className="text-sm inline"/>
+                  <MarkdownDisplay content={value} asCard={false}/>
                 </div>
               );
             }
-            // If it's not a string, and not an object (which would be handled by recursion if needed), render as is or handle specifically.
-            // For simplicity, this example will skip non-string, non-object values or you could stringify them.
-            // For nested objects, the recursion in renderContent would handle it if the structure was deeper.
              return (
-              <div key={key}>
+              <div key={key} className="text-sm">
                 <strong className="capitalize">{formattedKey}: </strong> 
                  {typeof value === 'object' ? renderContent(value as Record<string, any>) : String(value)}
               </div>
@@ -473,3 +470,5 @@ export default function LocalSeoPage() {
     </div>
   );
 }
+
+    
