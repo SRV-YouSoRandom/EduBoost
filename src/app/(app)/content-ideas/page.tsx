@@ -21,7 +21,7 @@ import MarkdownDisplay from "@/components/common/markdown-display";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Lightbulb, Sparkles, ChevronsUpDown, Wand2, Trash2 } from "lucide-react";
+import { Loader2, Lightbulb, Sparkles, ChevronsUpDown, Wand2, Trash2, AlertCircle } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import { cn, truncateText, deepClone } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -61,7 +61,6 @@ export default function ContentIdeasPage() {
   const [openCollapsibles, setOpenCollapsibles] = useState<Record<string, boolean>>({});
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [isPageLoading, setIsPageLoading] = useState(true);
-  // const [ideaToDelete, setIdeaToDelete] = useState<ContentIdeaWithStatus | null>(null); // Removed
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -127,15 +126,20 @@ export default function ContentIdeasPage() {
       const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
       console.error("Error saving content ideas:", error, "Full details:", errorDetails);
       toast({ title: "Error Saving Ideas", description: `Could not save content ideas. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
-    } else {
-      // toast({ title: "Ideas Saved", description: "Your content ideas have been saved." });
-      // Avoid toast on every minor save like status change or delete, only for major generations/refinements
     }
   };
 
 
   async function onInitialSubmit(values: z.infer<typeof formSchema>) {
     if (!activeInstitution) return;
+    if (result && result.contentIdeas && result.contentIdeas.length >= 10) {
+      toast({
+        title: "Idea Limit Reached",
+        description: "You have reached the maximum of 10 content ideas. Please delete some ideas to generate new ones.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsGenerating(true);
     setResult(null); 
     try {
@@ -173,7 +177,6 @@ export default function ContentIdeasPage() {
         programsOffered: activeInstitution.programsOffered,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       };
-      // Pass a deep clone of currentIdeas to avoid issues with direct state mutation if AI flow or other logic modifies it.
       const currentIdeasClone = deepClone(result);
       const refineInput: RefineContentIdeasInput = {
         currentIdeas: currentIdeasClone,
@@ -213,8 +216,8 @@ export default function ContentIdeasPage() {
     const updatedIdeasArray = result.contentIdeas.filter(idea => idea.id !== ideaId);
     const updatedResult = { ...result, contentIdeas: updatedIdeasArray };
     
-    setResult(updatedResult); // Optimistic update
-    await saveIdeasToSupabase(updatedResult); // Persist change
+    setResult(updatedResult); 
+    await saveIdeasToSupabase(updatedResult); 
     
     toast({ title: "Idea Deleted", description: "The content idea has been removed." });
   };
@@ -317,6 +320,7 @@ export default function ContentIdeasPage() {
     );
   }
 
+  const maxIdeasReached = result?.contentIdeas?.length >= 10;
 
   return (
     <div className="space-y-8">
@@ -331,7 +335,7 @@ export default function ContentIdeasPage() {
           <Card className="mt-6 shadow-lg">
             <CardHeader>
               <CardTitle>Generated Content Ideas for {activeInstitution.name}</CardTitle>
-              <CardDescription>Manage status and expand ideas for details like scripts or outlines. Click an idea to see more.</CardDescription>
+              <CardDescription>Manage status and expand ideas for details like scripts or outlines. Click an idea to see more. (Max {result.contentIdeas.length}/10 ideas)</CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="space-y-4">
@@ -352,7 +356,7 @@ export default function ContentIdeasPage() {
                               "flex-1 justify-start text-left px-0 text-base items-center min-w-0",
                                "md:w-[40%] md:max-w-[40%]" 
                             )}
-                            title={idea.text} // Show full text on hover
+                            title={idea.text} 
                           >
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
                              <span className="flex-1 font-medium min-w-0 truncate">
@@ -426,7 +430,7 @@ export default function ContentIdeasPage() {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center"><Wand2 className="mr-2 h-5 w-5" />Refine Content Ideas</CardTitle>
-              <CardDescription>Provide a prompt to modify the current list of ideas (e.g., "Add more ideas for video content", "Focus on STEM programs").</CardDescription>
+              <CardDescription>Provide a prompt to modify the current list of ideas (e.g., "Add more ideas for video content", "Focus on STEM programs"). Refinement also respects the 10 idea limit.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea
@@ -447,15 +451,20 @@ export default function ContentIdeasPage() {
                <CardDescription>This will replace the current list of ideas for {activeInstitution.name}. Ensure institution details below are correct.</CardDescription>
              </CardHeader>
              <CardContent>
+              {maxIdeasReached && (
+                <div className="mb-4 p-3 bg-destructive/10 border border-destructive text-destructive-foreground rounded-md flex items-center text-sm">
+                  <AlertCircle className="h-5 w-5 mr-2" />
+                  Maximum of 10 ideas reached. Please delete some ideas to generate new ones.
+                </div>
+              )}
                <Form {...form}>
                  <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
                    <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input {...field} readOnly={!!activeInstitution} /></FormControl><FormMessage /></FormItem>)} />
-                    {/* Hidden fields for context if needed, or rely on form values directly */}
                     <FormField control={form.control} name="institutionType" render={({ field }) => (<FormItem className="hidden"><FormLabel>Institution Type</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem className="hidden"><FormLabel>Target Audience</FormLabel><FormControl><Textarea {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem className="hidden"><FormLabel>Programs Offered</FormLabel><FormControl><Textarea {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="uniqueSellingPoints" render={({ field }) => (<FormItem className="hidden"><FormLabel>Unique Selling Points</FormLabel><FormControl><Textarea {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
-                   <Button type="submit" disabled={isGenerating || !activeInstitution || isRefining} className="w-full md:w-auto">
+                   <Button type="submit" disabled={isGenerating || !activeInstitution || isRefining || maxIdeasReached} className="w-full md:w-auto">
                      {isGenerating ? ( <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
                      ) : "Generate New Content Ideas"}
                    </Button>
