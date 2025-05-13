@@ -331,13 +331,13 @@ export default function ContentIdeasPage() {
                             variant="ghost" 
                             className={cn(
                               "flex-1 justify-start text-left px-0 text-base items-center min-w-0",
-                              "md:max-w-2/5" // Constrain width to 40% on medium screens and up
+                               "md:w-2/5 md:max-w-[40%]" 
                             )}
                             title={idea.text} // Show full text on hover
                           >
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
                              <span className="flex-1 font-medium min-w-0 truncate">
-                               {truncateText(idea.text, 20)}
+                               {truncateText(idea.text, 5)}
                              </span>
                           </Button>
                         </CollapsibleTrigger>
