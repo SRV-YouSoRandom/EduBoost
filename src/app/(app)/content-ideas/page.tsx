@@ -1,4 +1,3 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -75,8 +74,9 @@ export default function ContentIdeasPage() {
       .single();
     
     if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
-      console.error("Error fetching content ideas:", error);
-      toast({ title: "Error", description: "Could not fetch saved content ideas.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error fetching content ideas:", error, "Full details:", errorDetails);
+      toast({ title: "Error Fetching Ideas", description: `Could not fetch saved content ideas. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else if (data && data.ideas_data) {
       setResult(data.ideas_data as GenerateContentIdeasOutput);
     }
@@ -106,16 +106,15 @@ export default function ContentIdeasPage() {
 
   const saveIdeasToSupabase = async (ideasData: GenerateContentIdeasOutput) => {
     if (!activeInstitution) return;
-    // TODO: Add user_id when auth is available
     const { error } = await supabase.from('content_ideas').upsert({
       institution_id: activeInstitution.id,
       ideas_data: ideasData,
-      // user_id: userId
     }, { onConflict: 'institution_id' });
 
     if (error) {
-      console.error("Error saving content ideas:", error);
-      toast({ title: "Error Saving", description: "Could not save content ideas.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error saving content ideas:", error, "Full details:", errorDetails);
+      toast({ title: "Error Saving Ideas", description: `Could not save content ideas. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else {
       toast({ title: "Ideas Saved", description: "Your content ideas have been saved." });
     }
@@ -249,7 +248,6 @@ export default function ContentIdeasPage() {
         description: (error as Error).message || "Could not expand the content idea.",
         variant: "destructive",
       });
-      // Revert isExpanding status on error
       const errorRevertedResult = {
          ...result,
         contentIdeas: result.contentIdeas.map(idea =>
@@ -257,7 +255,6 @@ export default function ContentIdeasPage() {
         ),
       };
       setResult(errorRevertedResult);
-      // No need to save this partial state to Supabase, original result is still there.
     }
   };
   

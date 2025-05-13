@@ -1,4 +1,3 @@
-
 # EduBoost - AI Digital Marketing Assistant
 
 This is a Next.js application designed to assist educational institutions with their digital marketing efforts using AI-powered tools.
@@ -22,17 +21,21 @@ This is a Next.js application designed to assist educational institutions with t
     ```
     Replace `YOUR_SUPABASE_URL` and `YOUR_SUPABASE_ANON_KEY` with the actual values from your Supabase project settings (Project Settings > API).
 
-4.  **Set up Supabase Database:**
+4.  **Set up Supabase Database (CRITICAL STEP):**
     *   Go to your Supabase project dashboard.
     *   Navigate to the "SQL Editor" section.
     *   Open the `docs/supabase_setup.sql` file from this project.
-    *   Copy the entire content of the SQL file.
+    *   **Copy the entire content of the SQL file.**
     *   Paste it into the Supabase SQL Editor and click "Run". This will:
         *   Create the necessary tables: `institutions`, `content_ideas`, `gmb_optimizations`, `local_seo_strategies`, and `performance_marketing_strategies`.
         *   Set up foreign key relationships with cascade delete (e.g., deleting an institution will also delete its associated strategies).
         *   Create a function and triggers to automatically update `updated_at` timestamps.
         *   Enable Row Level Security (RLS) on all created tables.
         *   Apply permissive RLS policies for the `anon` role, allowing full CRUD access. **These policies are intended for initial development and must be tightened when user authentication is implemented.**
+    *   **Troubleshooting Supabase Errors (like `Error: {}`):**
+        *   **Ensure the `supabase_setup.sql` script has been run successfully in your Supabase project.** This is the most common cause of empty error objects or inability to fetch/save data. If the tables or RLS policies are missing or incorrect, the application will not function.
+        *   Verify your `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in the `.env` file are correct and match your Supabase project.
+        *   Check your browser's developer console for more detailed error messages that might have been logged.
 
 5.  **Understanding Row Level Security (RLS):**
     *   The `supabase_setup.sql` script enables RLS and sets up initial permissive policies for development purposes (allowing anonymous users full access). This is crucial for the application to function correctly with the `anon` key before full user authentication is in place.
@@ -66,4 +69,3 @@ This is a Next.js application designed to assist educational institutions with t
 ## Data Persistence
 
 This application uses Supabase to store all institution data and generated strategies. Each institution you create will have its associated marketing data saved in the Supabase database. The relationships are set up with cascade delete, meaning if an institution is deleted, all its related strategy data will also be removed.
-```

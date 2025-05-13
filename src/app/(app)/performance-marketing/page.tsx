@@ -1,4 +1,3 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -73,8 +72,9 @@ export default function PerformanceMarketingPage() {
       .single();
 
     if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
-      console.error("Error fetching performance marketing strategy:", error);
-      toast({ title: "Error", description: "Could not fetch saved strategy.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error fetching performance marketing strategy:", error, "Full details:", errorDetails);
+      toast({ title: "Error Fetching Strategy", description: `Could not fetch saved strategy. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else if (data && data.strategy_data) {
       setResult(data.strategy_data as GeneratePerformanceMarketingStrategyOutput);
     }
@@ -83,7 +83,6 @@ export default function PerformanceMarketingPage() {
 
   useEffect(() => {
     if (activeInstitution) {
-      // Keep current form values for budget and goals if user has typed them
       const currentBudget = form.getValues("marketingBudget");
       const currentGoals = form.getValues("marketingGoals");
 
@@ -109,16 +108,15 @@ export default function PerformanceMarketingPage() {
 
   const saveStrategyToSupabase = async (strategyData: GeneratePerformanceMarketingStrategyOutput) => {
     if (!activeInstitution) return;
-    // TODO: Add user_id when auth is available
     const { error } = await supabase.from('performance_marketing_strategies').upsert({
       institution_id: activeInstitution.id,
       strategy_data: strategyData,
-      // user_id: userId
     }, { onConflict: 'institution_id' });
 
     if (error) {
-      console.error("Error saving performance marketing strategy:", error);
-      toast({ title: "Error Saving", description: "Could not save strategy.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error saving performance marketing strategy:", error, "Full details:", errorDetails);
+      toast({ title: "Error Saving Strategy", description: `Could not save strategy. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else {
       toast({ title: "Strategy Saved", description: "Your performance marketing strategy has been saved." });
     }

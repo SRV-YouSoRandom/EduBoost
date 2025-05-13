@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { Institution } from "@/types/institution";
@@ -20,7 +19,7 @@ interface InstitutionContextType {
 
 const InstitutionContext = createContext<InstitutionContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID = 'eduboost_active_institution_id'; // Keep this for active selection UI persistence
+const LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID = 'eduboost_active_institution_id'; 
 
 export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
@@ -30,12 +29,12 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const fetchInstitutions = useCallback(async () => {
     setIsLoading(true);
-    // TODO: When auth is implemented, filter by user_id: .eq('user_id', session.user.id)
     const { data, error } = await supabase.from('institutions').select('*').order('created_at', { ascending: false });
 
     if (error) {
-      console.error("Error fetching institutions:", error);
-      toast({ title: "Error", description: "Could not fetch institutions.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error fetching institutions:", error, "Full details:", errorDetails);
+      toast({ title: "Error Fetching Institutions", description: `Could not fetch institutions. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
       setInstitutions([]);
     } else if (data) {
       const fetchedInstitutions = data.map(fromSupabaseInstitution);
@@ -59,7 +58,6 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
   }, [fetchInstitutions]);
 
   useEffect(() => {
-    // Persist active institution ID to localStorage for UI convenience
     if (activeInstitution) {
       localStorage.setItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID, activeInstitution.id);
     } else {
@@ -69,7 +67,6 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const addInstitution = async (institutionData: Omit<Institution, 'id'>): Promise<Institution | null> => {
     setIsLoading(true);
-    // TODO: Get actual user_id from session when auth is added
     const supabaseData = toSupabaseInstitutionInsert(institutionData, null); 
     
     const { data, error } = await supabase
@@ -80,13 +77,14 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
 
     setIsLoading(false);
     if (error) {
-      console.error("Error adding institution:", error);
-      toast({ title: "Error", description: "Could not add institution.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error adding institution:", error, "Full details:", errorDetails);
+      toast({ title: "Error Adding Institution", description: `Could not add institution. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
       return null;
     }
     if (data) {
       const newInstitution = fromSupabaseInstitution(data);
-      setInstitutions(prev => [newInstitution, ...prev]); // Add to start of list
+      setInstitutions(prev => [newInstitution, ...prev]);
       if (!activeInstitution || institutions.length === 0) {
         setActiveInstitution(newInstitution);
       }
@@ -107,8 +105,9 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
     
     setIsLoading(false);
     if (error) {
-      console.error("Error updating institution:", error);
-      toast({ title: "Error", description: "Could not update institution.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error updating institution:", error, "Full details:", errorDetails);
+      toast({ title: "Error Updating Institution", description: `Could not update institution. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
       return null;
     }
     if (data) {
@@ -126,13 +125,12 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const deleteInstitution = async (id: string): Promise<void> => {
     setIsLoading(true);
-    // Also delete related strategies when an institution is deleted (cascade delete in DB or manual here)
-    // For now, just deleting the institution. Cascade delete is preferred.
     const { error } = await supabase.from('institutions').delete().eq('id', id);
     setIsLoading(false);
     if (error) {
-      console.error("Error deleting institution:", error);
-      toast({ title: "Error", description: "Could not delete institution.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error deleting institution:", error, "Full details:", errorDetails);
+      toast({ title: "Error Deleting Institution", description: `Could not delete institution. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
       return;
     }
     

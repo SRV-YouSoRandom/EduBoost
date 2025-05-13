@@ -1,4 +1,3 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -124,8 +123,9 @@ export default function GmbOptimizerPage() {
       .single();
 
     if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
-      console.error("Error fetching GMB optimizations:", error);
-      toast({ title: "Error", description: "Could not fetch saved optimizations.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error fetching GMB optimizations:", error, "Full details:", errorDetails);
+      toast({ title: "Error Fetching Optimizations", description: `Could not fetch saved optimizations. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else if (data && data.optimization_data) {
       setResult(data.optimization_data as GenerateGMBOptimizationsOutput);
     }
@@ -155,16 +155,15 @@ export default function GmbOptimizerPage() {
 
   const saveOptimizationsToSupabase = async (optimizationsData: GenerateGMBOptimizationsOutput) => {
     if (!activeInstitution) return;
-    // TODO: Add user_id when auth is available
     const { error } = await supabase.from('gmb_optimizations').upsert({
       institution_id: activeInstitution.id,
       optimization_data: optimizationsData,
-      // user_id: userId 
     }, { onConflict: 'institution_id' });
 
     if (error) {
-      console.error("Error saving GMB optimizations:", error);
-      toast({ title: "Error Saving", description: "Could not save optimizations.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error saving GMB optimizations:", error, "Full details:", errorDetails);
+      toast({ title: "Error Saving Optimizations", description: `Could not save optimizations. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else {
       toast({ title: "Optimizations Saved", description: "Your GMB optimizations have been saved." });
     }

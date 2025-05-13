@@ -1,4 +1,3 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -110,7 +109,7 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
             <ListWithStatusDisplay title="Primary Keywords" items={keywordData.primaryKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
             <ListWithStatusDisplay title="Secondary Keywords" items={keywordData.secondaryKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
             <ListWithStatusDisplay title="Long-Tail Keywords" items={keywordData.longTailKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
-            {keywordData.toolsMention && <div className="text-sm"><strong>Tools Mentioned:</strong> <MarkdownDisplay content={keywordData.toolsMention} asCard={false} />}</div>}
+            {keywordData.toolsMention && <div className="text-sm"><strong className="block mb-1">Tools Mentioned:</strong> <MarkdownDisplay content={keywordData.toolsMention} asCard={false} />}</div>}
           </div>
         );
       }
@@ -118,8 +117,8 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
         const trackingData = data as GenerateLocalSEOStrategyOutput['trackingReporting'];
         return (
           <div className="space-y-4">
-            {trackingData.googleAnalytics && <div className="text-sm"><strong>Google Analytics:</strong> <MarkdownDisplay content={trackingData.googleAnalytics} asCard={false} /></div>}
-            {trackingData.googleSearchConsole && <div className="text-sm"><strong>Google Search Console:</strong> <MarkdownDisplay content={trackingData.googleSearchConsole} asCard={false} /></div>}
+            {trackingData.googleAnalytics && <div className="text-sm"><strong className="block mb-1">Google Analytics:</strong> <MarkdownDisplay content={trackingData.googleAnalytics} asCard={false} /></div>}
+            {trackingData.googleSearchConsole && <div className="text-sm"><strong className="block mb-1">Google Search Console:</strong> <MarkdownDisplay content={trackingData.googleSearchConsole} asCard={false} /></div>}
             <ListWithStatusDisplay 
               title="Key Performance Indicators (KPIs)" 
               items={trackingData.kpis || []} 
@@ -215,8 +214,9 @@ export default function LocalSeoPage() {
       .single();
 
     if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
-      console.error("Error fetching Local SEO strategy:", error);
-      toast({ title: "Error", description: "Could not fetch saved strategy.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error fetching Local SEO strategy:", error, "Full details:", errorDetails);
+      toast({ title: "Error Fetching Strategy", description: `Could not fetch saved strategy. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else if (data && data.strategy_data) {
       setResult(data.strategy_data as GenerateLocalSEOStrategyOutput);
     }
@@ -246,16 +246,19 @@ export default function LocalSeoPage() {
 
   const saveStrategyToSupabase = async (strategyData: GenerateLocalSEOStrategyOutput) => {
     if (!activeInstitution) return;
-    // TODO: Add user_id when auth is available
     const { error } = await supabase.from('local_seo_strategies').upsert({
       institution_id: activeInstitution.id,
       strategy_data: strategyData,
-      // user_id: userId // Add this when auth is implemented
     }, { onConflict: 'institution_id' });
 
     if (error) {
-      console.error("Error saving Local SEO strategy:", error);
-      toast({ title: "Error Saving", description: "Could not save strategy.", variant: "destructive" });
+      const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
+      console.error("Error saving Local SEO strategy:", error, "Full details:", errorDetails);
+      toast({
+        title: "Error Saving Strategy",
+        description: `Could not save strategy. ${error.message || 'Please check console for details.'}`,
+        variant: "destructive",
+      });
     } else {
       toast({ title: "Strategy Saved", description: "Your Local SEO strategy has been saved." });
     }
