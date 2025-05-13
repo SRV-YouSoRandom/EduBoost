@@ -1,4 +1,3 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -41,6 +40,15 @@ const formSchema = z.object({
   programsOffered: z.string().min(10, "Programs offered description is too short."),
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
+
+const truncateTextByWords = (text: string, wordLimit: number): string => {
+  if (!text) return "";
+  const words = text.split(/\s+/); // Split by any whitespace
+  if (words.length > wordLimit) {
+    return words.slice(0, wordLimit).join(" ") + "...";
+  }
+  return text;
+};
 
 
 export default function ContentIdeasPage() {
@@ -228,8 +236,8 @@ export default function ContentIdeasPage() {
       const expansionResult = await expandContentIdea(expansionInput);
       
       const finalResult = {
-        ...result, // Use the original result before isExpanding was set, to avoid race conditions if user clicks multiple times
-        contentIdeas: (result?.contentIdeas || []).map(idea => // Ensure result.contentIdeas is not null
+        ...result, 
+        contentIdeas: (result?.contentIdeas || []).map(idea => 
           idea.id === ideaId 
             ? { ...idea, expandedDetails: expansionResult.expandedDetails, isExpanding: false } 
             : idea
@@ -251,7 +259,7 @@ export default function ContentIdeasPage() {
         variant: "destructive",
       });
        const errorRevertedResult = {
-         ...result, // Use the original result before isExpanding was set
+         ...result, 
         contentIdeas: (result?.contentIdeas || []).map(idea =>
           idea.id === ideaId ? { ...idea, isExpanding: false } : idea
         ),
@@ -312,19 +320,21 @@ export default function ContentIdeasPage() {
                   <li 
                     key={idea.id} 
                     className={cn(
-                      "p-4 rounded-lg border bg-card overflow-hidden", // overflow-hidden applied here
+                      "p-4 rounded-lg border bg-card overflow-hidden", 
                       getStatusSpecificStyling(idea.status)
                     )}
                   >
                     <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
-                      <div className="w-full flex flex-col md:flex-row md:items-start md:justify-between gap-4"> {/* Changed to md:items-start */}
+                      <div className="w-full flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                         <CollapsibleTrigger asChild>
                           <Button variant="ghost" className="flex-1 justify-start text-left px-0 text-base items-center min-w-0">
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
-                             <span className="flex-1 font-medium min-w-0 truncate" title={idea.text}>{idea.text}</span>
+                             <span className="flex-1 font-medium min-w-0" title={idea.text}>
+                               {truncateTextByWords(idea.text, 20)}
+                             </span>
                           </Button>
                         </CollapsibleTrigger>
-                         <div className="flex items-center gap-2 md:ml-4 flex-shrink-0"> {/* Added flex-shrink-0 */}
+                         <div className="flex items-center gap-2 md:ml-4 flex-shrink-0">
                           <StatusControl
                             currentStatus={idea.status}
                             onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
@@ -333,7 +343,6 @@ export default function ContentIdeasPage() {
                         </div>
                       </div>
                       <CollapsibleContent className="mt-4 pt-4 border-t space-y-3">
-                        {/* Display full idea text here as well, not truncated */}
                         <p className="font-semibold text-md mb-3 break-words">{idea.text}</p>
                         {idea.isExpanding && (
                           <div className="flex items-center text-muted-foreground">
@@ -410,10 +419,10 @@ export default function ContentIdeasPage() {
 
       {(!result || result.contentIdeas.length === 0) && activeInstitution && !isGenerating && !isPageLoading && (
          <Card className="shadow-lg">
-           <CardHeader>
-             <CardTitle>No Content Ideas for {activeInstitution.name}</CardTitle>
+           <CardHeader><CardTitle>No Content Ideas for {activeInstitution.name}</CardTitle></CardHeader>
+           <CardContent>
              <CardDescription>Tell us about your institution to get relevant content ideas.</CardDescription>
-           </CardHeader>
+           </CardContent>
            <CardContent>
              <Form {...form}>
                <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
@@ -452,4 +461,3 @@ export default function ContentIdeasPage() {
     </div>
   );
 }
-
