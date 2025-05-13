@@ -85,8 +85,8 @@ export default function ContentIdeasPage() {
         uniqueSellingPoints: "",
       });
     }
-    // Load from localStorage when activeInstitution changes
-    const key = activeInstitution?.id ? `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}` : null;
+    
+    const key = getCurrentStorageKey();
     if (key) {
       const storedResult = localStorage.getItem(key);
       if (storedResult) {
@@ -94,7 +94,7 @@ export default function ContentIdeasPage() {
           setResult(JSON.parse(storedResult));
         } catch (error) {
           console.error(`Failed to parse stored content ideas for ${key}:`, error);
-          localStorage.removeItem(key);
+          localStorage.removeItem(key); // Clear corrupted data
           setResult(null);
         }
       } else {
@@ -112,7 +112,6 @@ export default function ContentIdeasPage() {
     if (key && result) {
       localStorage.setItem(key, JSON.stringify(result));
     } else if (key && !result) {
-      // If result is nullified for an active institution, remove its stored data
       localStorage.removeItem(key);
     }
   }, [result, activeInstitution?.id]);
@@ -120,15 +119,10 @@ export default function ContentIdeasPage() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    // No need to setResult(null) here if we want to show old results while loading new ones.
-    // Or, if we prefer a clean slate:
-    // setResult(null); 
-    // const key = getCurrentStorageKey();
-    // if (key) localStorage.removeItem(key);
-
+    // setResult(null); // Optional: Clears previous results from UI immediately
     try {
       const data = await generateContentIdeas(values);
-      setResult(data);
+      setResult(data); // This will trigger the useEffect to save to localStorage
       toast({
         title: "Content Ideas Generated!",
         description: "A fresh batch of content ideas has been successfully created for you.",
@@ -140,6 +134,8 @@ export default function ContentIdeasPage() {
         description: (error as Error).message || "Could not generate content ideas. Please try again.",
         variant: "destructive",
       });
+      // Optionally clear results on error or keep showing old ones
+      // setResult(null);
     } finally {
       setIsLoading(false);
     }
@@ -155,9 +151,16 @@ export default function ContentIdeasPage() {
     });
   };
 
-  const handleExpandIdea = async (ideaId: string) => {
+  const handleExpandIdea = async (ideaId: string, isRegeneration: boolean = false) => {
     const ideaToExpand = result?.contentIdeas.find(idea => idea.id === ideaId);
-    if (!ideaToExpand || !activeInstitution) return;
+    if (!ideaToExpand || !activeInstitution) {
+       toast({
+        title: "Cannot Expand Idea",
+        description: "Please select an institution and ensure the idea exists.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setResult(prev => prev ? ({
       ...prev,
@@ -189,8 +192,8 @@ export default function ContentIdeasPage() {
         ),
       }) : null);
       toast({
-        title: "Idea Expanded!",
-        description: "Details have been generated for the content idea.",
+        title: isRegeneration ? "Details Re-generated!" : "Idea Expanded!",
+        description: "Details have been successfully generated for the content idea.",
       });
     } catch (error) {
       console.error("Error expanding content idea:", error);
@@ -368,7 +371,7 @@ export default function ContentIdeasPage() {
                       </CollapsibleTrigger>
                        <div className="flex items-center gap-2 flex-shrink-0 md:ml-4">
                         {!idea.expandedDetails && !idea.isExpanding && (
-                           <Button variant="outline" size="sm" onClick={() => handleExpandIdea(idea.id)} disabled={!activeInstitution}>
+                           <Button variant="outline" size="sm" onClick={() => handleExpandIdea(idea.id, false)} disabled={!activeInstitution}>
                              <Sparkles className="mr-2 h-4 w-4" /> Get Details
                            </Button>
                          )}
@@ -388,7 +391,7 @@ export default function ContentIdeasPage() {
                       {idea.expandedDetails ? (
                         <>
                           <MarkdownDisplay content={idea.expandedDetails} asCard={false} />
-                           <Button variant="link" size="sm" onClick={() => handleExpandIdea(idea.id)} className="mt-2 text-primary" disabled={idea.isExpanding || !activeInstitution}>
+                           <Button variant="link" size="sm" onClick={() => handleExpandIdea(idea.id, true)} className="mt-2 text-primary" disabled={idea.isExpanding || !activeInstitution}>
                              {idea.isExpanding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                              Re-generate Details
                            </Button>
@@ -410,7 +413,7 @@ export default function ContentIdeasPage() {
             <CardTitle>No Content Ideas Generated</CardTitle>
           </CardHeader>
           <CardContent>
-            <p>The AI could not generate content ideas based on the provided input. Please try refining your input or try again later.</p>
+            <p>The AI could not generate content ideas based on the provided input. Please try refining your input or try again later. If you had a previously saved strategy, it might have been cleared.</p>
           </CardContent>
         </Card>
       )}

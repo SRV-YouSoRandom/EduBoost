@@ -106,9 +106,9 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
         const keywordData = data as GenerateLocalSEOStrategyOutput['keywordResearch'];
         return (
           <div className="space-y-4">
-            <ListWithStatusDisplay title="Primary Keywords" items={keywordData.primaryKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
-            <ListWithStatusDisplay title="Secondary Keywords" items={keywordData.secondaryKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
-            <ListWithStatusDisplay title="Long-Tail Keywords" items={keywordData.longTailKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
+            <ListWithStatusDisplay title="Primary Keywords" items={keywordData.primaryKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
+            <ListWithStatusDisplay title="Secondary Keywords" items={keywordData.secondaryKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
+            <ListWithStatusDisplay title="Long-Tail Keywords" items={keywordData.longTailKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
             {keywordData.toolsMention && <div><strong>Tools Mentioned:</strong> <MarkdownDisplay content={keywordData.toolsMention} asCard={false} className="text-sm inline"/></div>}
           </div>
         );
@@ -121,7 +121,7 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
             {trackingData.googleSearchConsole && <p><strong>Google Search Console:</strong> {trackingData.googleSearchConsole}</p>}
             <ListWithStatusDisplay 
               title="Key Performance Indicators (KPIs)" 
-              items={trackingData.kpis} 
+              items={trackingData.kpis || []} 
               onStatusChange={(id, status) => onItemsStatusChange('kpis', id, status)}
             />
           </div>
@@ -219,7 +219,7 @@ export default function LocalSeoPage() {
       });
     }
 
-    const key = activeInstitution?.id ? `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}` : null;
+    const key = getCurrentStorageKey();
     if (key) {
       const storedResult = localStorage.getItem(key);
       if (storedResult) {
@@ -227,14 +227,14 @@ export default function LocalSeoPage() {
         setResult(JSON.parse(storedResult));
       } catch (error) {
         console.error(`Failed to parse stored local SEO results for ${key}:`, error);
-        localStorage.removeItem(key);
+        localStorage.removeItem(key); // Clear corrupted data
         setResult(null);
       }
       } else {
-        setResult(null);
+        setResult(null); // No stored result for this institution
       }
     } else {
-      setResult(null);
+      setResult(null); // No active institution
     }
   }, [activeInstitution, form]);
 
@@ -249,9 +249,10 @@ export default function LocalSeoPage() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
+    // setResult(null); // Optional: Clears previous results from UI immediately
     try {
       const data = await generateLocalSEOStrategy(values);
-      setResult(data);
+      setResult(data); // This will trigger the useEffect to save to localStorage
       toast({
         title: "Strategy Generated!",
         description: "Your local SEO strategy has been successfully created.",
@@ -263,6 +264,8 @@ export default function LocalSeoPage() {
         description: (error as Error).message || "Could not generate the local SEO strategy. Please try again.",
         variant: "destructive",
       });
+      // Optionally clear results on error or keep showing old ones
+      // setResult(null);
     } finally {
       setIsLoading(false);
     }
@@ -283,14 +286,14 @@ export default function LocalSeoPage() {
       if (listType === 'keywordResearch' && updatedResult.keywordResearch) {
         updatedResult.keywordResearch = {
           ...updatedResult.keywordResearch,
-          primaryKeywords: mapItems(updatedResult.keywordResearch.primaryKeywords) as KeywordItemWithStatus[],
-          secondaryKeywords: mapItems(updatedResult.keywordResearch.secondaryKeywords) as KeywordItemWithStatus[],
-          longTailKeywords: mapItems(updatedResult.keywordResearch.longTailKeywords) as KeywordItemWithStatus[],
+          primaryKeywords: mapItems(updatedResult.keywordResearch.primaryKeywords || []) as KeywordItemWithStatus[],
+          secondaryKeywords: mapItems(updatedResult.keywordResearch.secondaryKeywords || []) as KeywordItemWithStatus[],
+          longTailKeywords: mapItems(updatedResult.keywordResearch.longTailKeywords || []) as KeywordItemWithStatus[],
         };
       } else if (listType === 'kpis' && updatedResult.trackingReporting) {
         updatedResult.trackingReporting = {
           ...updatedResult.trackingReporting,
-          kpis: mapItems(updatedResult.trackingReporting.kpis) as KeywordItemWithStatus[], 
+          kpis: mapItems(updatedResult.trackingReporting.kpis || []) as KeywordItemWithStatus[], 
         };
       }
       return updatedResult;
@@ -444,7 +447,7 @@ export default function LocalSeoPage() {
          <Card className="mt-6 shadow-lg">
            <CardHeader><CardTitle>No Strategy Generated</CardTitle></CardHeader>
            <CardContent>
-             <p>The AI could not generate a local SEO strategy based on the provided input. Please try refining your input or try again later.</p>
+             <p>The AI could not generate a local SEO strategy based on the provided input. Please try refining your input or try again later. If you had a previously saved strategy, it might have been cleared.</p>
            </CardContent>
          </Card>
        )}

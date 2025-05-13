@@ -136,7 +136,7 @@ export default function GmbOptimizerPage() {
       });
     }
     
-    const key = activeInstitution?.id ? `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}` : null;
+    const key = getCurrentStorageKey();
     if (key) {
       const storedResult = localStorage.getItem(key);
       if (storedResult) {
@@ -144,14 +144,14 @@ export default function GmbOptimizerPage() {
           setResult(JSON.parse(storedResult));
         } catch (error) {
           console.error(`Failed to parse stored GMB results for ${key}:`, error);
-          localStorage.removeItem(key);
+          localStorage.removeItem(key); // Clear corrupted data
           setResult(null);
         }
       } else {
-        setResult(null);
+        setResult(null); // No stored result for this institution
       }
     } else {
-      setResult(null);
+      setResult(null); // No active institution
     }
   }, [activeInstitution, form]);
   
@@ -160,6 +160,7 @@ export default function GmbOptimizerPage() {
     if (key && result) {
       localStorage.setItem(key, JSON.stringify(result));
     } else if (key && !result) {
+      // If result is nullified (e.g., due to form submission for a new strategy or error), remove stored data
       localStorage.removeItem(key);
     }
   }, [result, activeInstitution?.id]);
@@ -167,9 +168,13 @@ export default function GmbOptimizerPage() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
+    // Consider clearing old results if you want a clean slate while loading,
+    // or keep them to show something while new data is fetched.
+    // setResult(null); // Optional: Clears previous results from UI immediately
+    
     try {
       const data = await generateGMBOptimizations(values);
-      setResult(data);
+      setResult(data); // This will trigger the useEffect to save to localStorage
       toast({
         title: "Optimizations Generated!",
         description: "Your GMB optimization suggestions have been successfully created.",
@@ -181,6 +186,8 @@ export default function GmbOptimizerPage() {
         description: (error as Error).message || "Could not generate GMB optimizations. Please try again.",
         variant: "destructive",
       });
+       // Optionally clear results on error or keep showing old ones
+       // setResult(null); 
     } finally {
       setIsLoading(false);
     }
@@ -189,7 +196,11 @@ export default function GmbOptimizerPage() {
   const handleSectionStatusChange = (sectionKey: GMBSectionKey, newStatus: Status) => {
     setResult(prevResult => {
       if (!prevResult) return null;
-      const statusFieldKey = `${sectionKey}Status` as keyof GenerateGMBOptimizationsOutput;
+      // For keywordSuggestionsSectionStatus, the key in the output schema is 'keywordSuggestionsSectionStatus'
+      const statusFieldKey = sectionKey === 'keywordSuggestionsSection' 
+        ? 'keywordSuggestionsSectionStatus' 
+        : `${sectionKey}Status` as keyof GenerateGMBOptimizationsOutput;
+
       return {
         ...prevResult,
         [statusFieldKey]: newStatus,
@@ -345,7 +356,7 @@ export default function GmbOptimizerPage() {
             <CardHeader className="flex flex-row justify-between items-center">
                <CardTitle className="flex items-center"><SearchCheck className="mr-2 h-6 w-6 text-primary" />Keyword Suggestions</CardTitle>
               <StatusControl
-                currentStatus={result.keywordSuggestionsSectionStatus} 
+                currentStatus={result.keywordSuggestionsSectionStatus || 'pending'} 
                 onStatusChange={(newStatus) => handleSectionStatusChange('keywordSuggestionsSection', newStatus)}
               />
             </CardHeader>
@@ -358,7 +369,7 @@ export default function GmbOptimizerPage() {
             <CardHeader className="flex flex-row justify-between items-center">
               <CardTitle>Description Suggestions</CardTitle>
                <StatusControl
-                currentStatus={result.descriptionSuggestionsStatus}
+                currentStatus={result.descriptionSuggestionsStatus || 'pending'}
                 onStatusChange={(newStatus) => handleSectionStatusChange('descriptionSuggestions', newStatus)}
               />
             </CardHeader>
@@ -368,7 +379,7 @@ export default function GmbOptimizerPage() {
             <CardHeader className="flex flex-row justify-between items-center">
               <CardTitle>Additional Optimization Tips</CardTitle>
               <StatusControl
-                currentStatus={result.optimizationTipsStatus}
+                currentStatus={result.optimizationTipsStatus || 'pending'}
                 onStatusChange={(newStatus) => handleSectionStatusChange('optimizationTips', newStatus)}
               />
             </CardHeader>
@@ -380,7 +391,7 @@ export default function GmbOptimizerPage() {
          <Card className="mt-6 shadow-lg">
            <CardHeader><CardTitle>No Optimizations Generated</CardTitle></CardHeader>
            <CardContent>
-             <p>The AI could not generate GMB optimizations based on the provided input. Please try refining your input or try again later.</p>
+             <p>The AI could not generate GMB optimizations based on the provided input. Please try refining your input or try again later. If you had a previously saved strategy, it might have been cleared.</p>
            </CardContent>
          </Card>
        )}

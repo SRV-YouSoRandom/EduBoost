@@ -67,6 +67,9 @@ export default function PerformanceMarketingPage() {
   };
 
   useEffect(() => {
+    const currentMarketingBudget = form.getValues("marketingBudget");
+    const currentMarketingGoals = form.getValues("marketingGoals");
+
     if (activeInstitution) {
       form.reset({
         institutionName: activeInstitution.name,
@@ -74,8 +77,8 @@ export default function PerformanceMarketingPage() {
         targetAudience: activeInstitution.targetAudience,
         programsOffered: activeInstitution.programsOffered, 
         location: activeInstitution.location,
-        marketingBudget: form.getValues("marketingBudget") || "", 
-        marketingGoals: form.getValues("marketingGoals") || "",
+        marketingBudget: currentMarketingBudget || "", 
+        marketingGoals: currentMarketingGoals || "",
       });
     } else {
        form.reset({ 
@@ -89,7 +92,7 @@ export default function PerformanceMarketingPage() {
       });
     }
 
-    const key = activeInstitution?.id ? `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}` : null;
+    const key = getCurrentStorageKey();
     if (key) {
       const storedResult = localStorage.getItem(key);
       if (storedResult) {
@@ -97,16 +100,16 @@ export default function PerformanceMarketingPage() {
           setResult(JSON.parse(storedResult));
         } catch (error) {
           console.error(`Failed to parse stored perf marketing results for ${key}:`, error);
-          localStorage.removeItem(key);
+          localStorage.removeItem(key); // Clear corrupted data
           setResult(null);
         }
       } else {
-        setResult(null);
+        setResult(null); // No stored result for this institution
       }
     } else {
-      setResult(null);
+      setResult(null); // No active institution
     }
-  }, [activeInstitution, form]);
+  }, [activeInstitution, form]); // form added as dependency
 
   useEffect(() => {
     const key = getCurrentStorageKey();
@@ -120,9 +123,10 @@ export default function PerformanceMarketingPage() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
+    // setResult(null); // Optional: Clears previous results from UI immediately
     try {
       const data = await generatePerformanceMarketingStrategy(values);
-      setResult(data);
+      setResult(data); // This will trigger the useEffect to save to localStorage
       toast({
         title: "Strategy Generated!",
         description: "Your performance marketing strategy has been successfully created.",
@@ -134,6 +138,8 @@ export default function PerformanceMarketingPage() {
         description: (error as Error).message || "Could not generate strategy. Please try again.",
         variant: "destructive",
       });
+      // Optionally clear results on error or keep showing old ones
+      // setResult(null);
     } finally {
       setIsLoading(false);
     }
@@ -297,7 +303,7 @@ export default function PerformanceMarketingPage() {
           <CardHeader className="flex flex-row justify-between items-center">
             <CardTitle>Generated Performance Marketing Strategy</CardTitle>
             <StatusControl
-              currentStatus={result.documentStatus}
+              currentStatus={result.documentStatus || 'pending'}
               onStatusChange={handleDocumentStatusChange}
             />
           </CardHeader>
@@ -310,7 +316,7 @@ export default function PerformanceMarketingPage() {
          <Card className="mt-6 shadow-lg">
            <CardHeader><CardTitle>No Strategy Generated</CardTitle></CardHeader>
            <CardContent>
-             <p>The AI could not generate a performance marketing strategy based on the provided input. Please try refining your input or try again later.</p>
+             <p>The AI could not generate a performance marketing strategy based on the provided input. Please try refining your input or try again later. If you had a previously saved strategy, it might have been cleared.</p>
            </CardContent>
          </Card>
        )}
