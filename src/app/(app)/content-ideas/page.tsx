@@ -109,6 +109,7 @@ export default function ContentIdeasPage() {
     const { error } = await supabase.from('content_ideas').upsert({
       institution_id: activeInstitution.id,
       ideas_data: ideasData,
+      updated_at: new Date().toISOString(), // Ensure updated_at is set
     }, { onConflict: 'institution_id' });
 
     if (error) {
@@ -317,7 +318,7 @@ export default function ContentIdeasPage() {
                     <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="flex-1 justify-start text-left px-0 text-base">
+                          <Button variant="ghost" className="flex-1 justify-start text-left px-0 text-base whitespace-normal">
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
                              <span className="flex-1 font-medium min-w-0 break-words">{idea.text}</span>
                           </Button>
@@ -382,12 +383,17 @@ export default function ContentIdeasPage() {
           <Card className="shadow-lg">
              <CardHeader>
                <CardTitle>Start Over: Generate New Ideas</CardTitle>
-               <CardDescription>This will replace the current list of ideas for {activeInstitution.name}.</CardDescription>
+               <CardDescription>This will replace the current list of ideas for {activeInstitution.name}. Ensure institution details below are correct.</CardDescription>
              </CardHeader>
              <CardContent>
                <Form {...form}>
                  <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
                    <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input {...field} readOnly={!!activeInstitution} /></FormControl><FormMessage /></FormItem>)} />
+                    {/* Hidden fields for context if needed, or rely on form values directly */}
+                    <FormField control={form.control} name="institutionType" render={({ field }) => (<FormItem className="hidden"><FormLabel>Institution Type</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
+                    <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem className="hidden"><FormLabel>Target Audience</FormLabel><FormControl><Textarea {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
+                    <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem className="hidden"><FormLabel>Programs Offered</FormLabel><FormControl><Textarea {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
+                    <FormField control={form.control} name="uniqueSellingPoints" render={({ field }) => (<FormItem className="hidden"><FormLabel>Unique Selling Points</FormLabel><FormControl><Textarea {...field} readOnly /></FormControl><FormMessage /></FormItem>)} />
                    <Button type="submit" disabled={isGenerating || !activeInstitution || isRefining} className="w-full md:w-auto">
                      {isGenerating ? ( <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
                      ) : "Generate New Content Ideas"}
