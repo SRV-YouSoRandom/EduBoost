@@ -273,6 +273,16 @@ export default function ContentIdeasPage() {
     setOpenCollapsibles(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // Function to truncate text to a certain number of words
+  const truncateText = (text: string, wordLimit: number): string => {
+    const words = text.split(' ');
+    if (words.length > wordLimit) {
+      return words.slice(0, wordLimit).join(' ') + '...';
+    }
+    return text;
+  };
+
+
   if (isInstitutionLoading || isPageLoading) {
     return (
       <div className="space-y-8">
@@ -321,12 +331,13 @@ export default function ContentIdeasPage() {
                             variant="ghost" 
                             className={cn(
                               "flex-1 justify-start text-left px-0 text-base items-center min-w-0",
-                              "md:max-w-3/5" // Constrain width on medium screens and up
+                              "md:max-w-2/5" // Constrain width to 40% on medium screens and up
                             )}
+                            title={idea.text} // Show full text on hover
                           >
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
-                             <span className="flex-1 font-medium min-w-0 truncate" title={idea.text}>
-                               {idea.text}
+                             <span className="flex-1 font-medium min-w-0 truncate">
+                               {truncateText(idea.text, 20)}
                              </span>
                           </Button>
                         </CollapsibleTrigger>
