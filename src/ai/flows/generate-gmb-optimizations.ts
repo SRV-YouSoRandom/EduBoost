@@ -22,9 +22,20 @@ const GenerateGMBOptimizationsInputSchema = z.object({
 });
 export type GenerateGMBOptimizationsInput = z.infer<typeof GenerateGMBOptimizationsInputSchema>;
 
+const GMBKeywordSuggestionSchema = z.object({
+  id: z.string().describe('Unique identifier for the keyword suggestion.'),
+  text: z.string().describe('The keyword suggestion text.'),
+  status: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the keyword suggestion.'),
+  searchVolumeLast24h: z.string().optional().describe('Estimated search volume in the last 24 hours for the given location. (e.g., "approx 50 searches", "low", "data unavailable")'),
+  searchVolumeLast7d: z.string().optional().describe('Estimated search volume in the last 7 days for the given location. (e.g., "approx 350 searches", "medium", "data unavailable")'),
+});
+export type GMBKeywordSuggestion = z.infer<typeof GMBKeywordSuggestionSchema>;
+
 const GenerateGMBOptimizationsOutputSchema = z.object({
-  keywordSuggestions: z.string().describe('A markdown list of keyword suggestions for the GMB profile.'),
-  keywordSuggestionsStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Status for keyword suggestions.'),
+  keywordSuggestions: z.array(GMBKeywordSuggestionSchema).describe('A list of keyword suggestions for the GMB profile, each with status and estimated search volume.'),
+  // keywordSuggestionsStatus is now implicitly handled by each item's status, or could be an overall status for the generation process itself.
+  // Keeping it as an overall status for the section for now.
+  keywordSuggestionsSectionStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Overall status for the keyword suggestions section.'),
   descriptionSuggestions: z.string().describe('Suggested GMB business description in markdown format, highlighting unique selling points and programs.'),
   descriptionSuggestionsStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Status for description suggestions.'),
   optimizationTips: z.string().describe('Additional GMB optimization tips in markdown format, covering posts, Q&A, photos, services, and reviews, referencing Google My Business features.'),
@@ -36,9 +47,15 @@ export async function generateGMBOptimizations(input: GenerateGMBOptimizationsIn
   return generateGMBOptimizationsFlow(input);
 }
 
-// Prompt output schema remains simpler
+// AI output schema for keywords
+const AIKeywordSuggestionSchema = z.object({
+  text: z.string().describe('The keyword suggestion text.'),
+  searchVolumeLast24h: z.string().optional().describe('Estimated search volume in the last 24 hours for the given location. (e.g., "approx 50 searches", "low", "data unavailable")'),
+  searchVolumeLast7d: z.string().optional().describe('Estimated search volume in the last 7 days for the given location. (e.g., "approx 350 searches", "medium", "data unavailable")'),
+});
+
 const PromptOutputSchema = z.object({
-  keywordSuggestions: z.string().describe('A markdown list of keyword suggestions for the GMB profile.'),
+  keywordSuggestions: z.array(AIKeywordSuggestionSchema).describe('An array of keyword suggestion objects for the GMB profile, including estimated search volumes.'),
   descriptionSuggestions: z.string().describe('Suggested GMB business description in markdown format, highlighting unique selling points and programs.'),
   optimizationTips: z.string().describe('Additional GMB optimization tips in markdown format, covering posts, Q&A, photos, services, and reviews, referencing Google My Business features.'),
 });
@@ -47,11 +64,10 @@ const PromptOutputSchema = z.object({
 const prompt = ai.definePrompt({
   name: 'generateGMBOptimizationsPrompt',
   input: {schema: GenerateGMBOptimizationsInputSchema},
-  output: {schema: PromptOutputSchema}, // AI generates the content strings
+  output: {schema: PromptOutputSchema},
   prompt: `You are an expert in Google My Business (GMB) optimization for educational institutions, leveraging all features of the GMB platform.
 
-  Based on the information provided, generate specific, actionable recommendations for optimizing their GMB profile.
-
+  Based on the information provided:
   Institution Name: {{{institutionName}}}
   Institution Type: {{{institutionType}}}
   Location: {{{location}}}
@@ -59,27 +75,19 @@ const prompt = ai.definePrompt({
   Target Audience: {{{targetAudience}}}
   Unique Selling Points: {{{uniqueSellingPoints}}}
 
-  Provide your output in the following structure:
+  Provide your output as a JSON object adhering to the defined schema.
 
-  **Keyword Suggestions:**
-  Present as a markdown list. Include a mix of general and specific local keywords.
-  Example:
-  \`\`\`markdown
-  - Preschool [Location]
-  - {{{institutionType}}} near me
-  - Best [Program Type, e.g., STEM] programs [Location]
-  - {{{institutionName}}} admissions
-  \`\`\`
+  For 'keywordSuggestions', provide an array of objects. Each object must include:
+  - "text": The keyword suggestion (e.g., "Preschool {{{location}}}", "{{{institutionType}}} near me", "Best STEM programs {{{location}}}").
+  - "searchVolumeLast24h": An estimated search volume for this keyword in '{{{location}}}' over the last 24 hours. State if data is unavailable or an approximation (e.g., 'approx. 5-10', 'low', 'unavailable').
+  - "searchVolumeLast7d": An estimated search volume for this keyword in '{{{location}}}' over the last 7 days. State if data is unavailable or an approximation (e.g., 'approx. 50-70', 'medium', 'unavailable').
+  Include a mix of general and specific local keywords.
 
-  **Description Suggestions:**
-  Craft an engaging GMB business description (max 750 characters). Use markdown for light formatting if needed (bolding key phrases). Highlight unique selling points and programs.
-  Example:
-  \`\`\`markdown
-  **{{{institutionName}}}** in [Location] offers exceptional [Program Type] programs for {{{targetAudience}}}. We focus on [Unique Selling Point 1] and [Unique Selling Point 2]. Our curriculum includes: {{{programsOffered}}}. Visit us to discover a nurturing learning environment!
-  \`\`\`
+  For 'descriptionSuggestions', craft an engaging GMB business description (max 750 characters). Use markdown for light formatting (bolding key phrases). Highlight unique selling points and programs.
+  Example for descriptionSuggestions:
+  "**{{{institutionName}}}** in {{{location}}} offers exceptional [Program Type] programs for {{{targetAudience}}}. We focus on [Unique Selling Point 1] and [Unique Selling Point 2]. Our curriculum includes: {{{programsOffered}}}. Visit us to discover a nurturing learning environment!"
 
-  **Additional Optimization Tips:**
-  Provide a markdown list of actionable tips covering these GMB features:
+  For 'optimizationTips', provide a markdown list of actionable tips covering these GMB features:
   - **GMB Posts:** Suggest types of posts (events, offers, news) and frequency.
   - **Q&A Feature:** Advise on populating common questions and promptly answering new ones.
   - **Photos & Videos:** Recommend types of visuals (campus, classrooms, activities, staff) and regular uploads.
@@ -87,7 +95,7 @@ const prompt = ai.definePrompt({
   - **Reviews Management:** Strategy for encouraging and responding to reviews.
   - **Attributes:** Suggest relevant GMB attributes to select (e.g., accessibility, amenities).
   - **Messaging:** Importance of enabling and responding to GMB messages.
-  Example:
+  Example for optimizationTips:
   \`\`\`markdown
   - **GMB Posts:** Share weekly updates about student achievements or upcoming open house events. Use compelling images.
   - **Q&A:** Add 5-10 common questions parents ask about admissions, curriculum, and facilities.
@@ -95,7 +103,8 @@ const prompt = ai.definePrompt({
   - **Services:** List each main program offered (e.g., "Preschool Program", "Kindergarten Program") with detailed descriptions and even pricing if applicable.
   - **Reviews:** Actively request reviews from happy parents and respond to all reviews (positive and negative) within 24-48 hours.
   \`\`\`
-  Ensure all outputs adhere to the markdown formatting requested in their descriptions.
+  Ensure all outputs adhere to the formatting requested in their descriptions.
+  The entire output must be a single, valid JSON object.
   `,
 });
 
@@ -103,14 +112,22 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
   {
     name: 'generateGMBOptimizationsFlow',
     inputSchema: GenerateGMBOptimizationsInputSchema,
-    outputSchema: GenerateGMBOptimizationsOutputSchema, // Flow output includes statuses
+    outputSchema: GenerateGMBOptimizationsOutputSchema,
   },
   async (input): Promise<GenerateGMBOptimizationsOutput> => {
     const {output} = await prompt(input);
      if (output && output.keywordSuggestions && output.descriptionSuggestions && output.optimizationTips) {
+      const mappedKeywordSuggestions: GMBKeywordSuggestion[] = output.keywordSuggestions.map(kw => ({
+        id: crypto.randomUUID(),
+        text: kw.text,
+        status: 'pending' as Status,
+        searchVolumeLast24h: kw.searchVolumeLast24h,
+        searchVolumeLast7d: kw.searchVolumeLast7d,
+      }));
+      
       return { 
-        keywordSuggestions: output.keywordSuggestions,
-        keywordSuggestionsStatus: 'pending',
+        keywordSuggestions: mappedKeywordSuggestions,
+        keywordSuggestionsSectionStatus: 'pending',
         descriptionSuggestions: output.descriptionSuggestions,
         descriptionSuggestionsStatus: 'pending',
         optimizationTips: output.optimizationTips,
@@ -119,8 +136,8 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
     }
     // Fallback error structure matching the output schema
     return { 
-      keywordSuggestions: "- Error: Could not generate keyword suggestions.",
-      keywordSuggestionsStatus: 'pending',
+      keywordSuggestions: [],
+      keywordSuggestionsSectionStatus: 'pending',
       descriptionSuggestions: "Error: Could not generate description suggestions.",
       descriptionSuggestionsStatus: 'pending',
       optimizationTips: "- Error: Could not generate optimization tips.",
@@ -128,3 +145,4 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
     };
   }
 );
+

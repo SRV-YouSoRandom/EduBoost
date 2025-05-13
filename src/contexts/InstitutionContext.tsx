@@ -7,8 +7,8 @@ interface InstitutionContextType {
   institutions: Institution[];
   activeInstitution: Institution | null;
   addInstitution: (institution: Omit<Institution, 'id'>) => void;
-  // updateInstitution: (institution: Institution) => void; // Future use
-  // deleteInstitution: (id: string) => void; // Future use
+  updateInstitution: (id: string, data: Partial<Omit<Institution, 'id'>>) => void;
+  deleteInstitution: (id: string) => void;
   selectInstitution: (id: string | null) => void;
   isLoading: boolean;
 }
@@ -21,7 +21,7 @@ const LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID = 'eduboost_active_institution_id'
 export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [activeInstitution, setActiveInstitution] = useState<Institution | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // To handle initial load from localStorage
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     try {
@@ -35,16 +35,20 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
           const foundActive = parsedInstitutions.find(inst => inst.id === storedActiveId);
           if (foundActive) {
             setActiveInstitution(foundActive);
+          } else if (parsedInstitutions.length > 0) { // Active ID exists but not in list, set to first
+            setActiveInstitution(parsedInstitutions[0]);
+            localStorage.setItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID, parsedInstitutions[0].id);
+          } else { // No institutions left
+            setActiveInstitution(null);
+            localStorage.removeItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID);
           }
         } else if (parsedInstitutions.length > 0) {
-          // Default to the first institution if no active one is set
           setActiveInstitution(parsedInstitutions[0]);
           localStorage.setItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID, parsedInstitutions[0].id);
         }
       }
     } catch (error) {
       console.error("Failed to load institutions from localStorage:", error);
-      // Clear potentially corrupted localStorage
       localStorage.removeItem(LOCAL_STORAGE_KEY_INSTITUTIONS);
       localStorage.removeItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID);
     }
@@ -69,10 +73,31 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
 
 
   const addInstitution = (institutionData: Omit<Institution, 'id'>) => {
-    const newInstitution: Institution = { ...institutionData, id: Date.now().toString() }; // Simple ID generation
+    const newInstitution: Institution = { ...institutionData, id: Date.now().toString() };
     setInstitutions(prev => [...prev, newInstitution]);
-    if (!activeInstitution) {
+    if (!activeInstitution || institutions.length === 0) {
       setActiveInstitution(newInstitution);
+    }
+  };
+
+  const updateInstitution = (id: string, data: Partial<Omit<Institution, 'id'>>) => {
+    setInstitutions(prev => 
+      prev.map(inst => inst.id === id ? { ...inst, ...data } : inst)
+    );
+    if (activeInstitution?.id === id) {
+      setActiveInstitution(prev => prev ? { ...prev, ...data } : null);
+    }
+  };
+
+  const deleteInstitution = (id: string) => {
+    setInstitutions(prev => prev.filter(inst => inst.id !== id));
+    if (activeInstitution?.id === id) {
+      const remainingInstitutions = institutions.filter(inst => inst.id !== id);
+      if (remainingInstitutions.length > 0) {
+        setActiveInstitution(remainingInstitutions[0]);
+      } else {
+        setActiveInstitution(null);
+      }
     }
   };
 
@@ -86,7 +111,15 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   return (
-    <InstitutionContext.Provider value={{ institutions, activeInstitution, addInstitution, selectInstitution, isLoading }}>
+    <InstitutionContext.Provider value={{ 
+      institutions, 
+      activeInstitution, 
+      addInstitution, 
+      updateInstitution, 
+      deleteInstitution, 
+      selectInstitution, 
+      isLoading 
+    }}>
       {children}
     </InstitutionContext.Provider>
   );

@@ -18,15 +18,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import PageHeaderTitle from "@/components/common/page-header-title";
 import MarkdownDisplay from "@/components/common/markdown-display";
 import StatusControl from "@/components/common/StatusControl";
-import type { Status, ItemWithIdAndStatus } from "@/types/common";
+import type { Status, ItemWithIdAndStatus } from "@/types/common"; // Using updated ItemWithIdAndStatus
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
-import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText } from "lucide-react";
+import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText, TrendingUp, Clock } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { cn } from "@/lib/utils";
 
-import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput } from '@/ai/flows/generate-local-seo-strategy';
+import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput, KeywordItemWithStatus } from '@/ai/flows/generate-local-seo-strategy';
 import { generateLocalSEOStrategy } from '@/ai/flows/generate-local-seo-strategy';
 
 
@@ -40,7 +40,8 @@ const formSchema = z.object({
 
 const LOCAL_STORAGE_KEY_LOCAL_SEO = "localSeoResult";
 
-const ListWithStatusDisplay: React.FC<{ title: string; items: ItemWithIdAndStatus[]; onStatusChange: (itemId: string, newStatus: Status) => void; listType?: 'keywordResearch' | 'kpis' }> = ({ title, items, onStatusChange, listType }) => {
+// ItemType is KeywordItemWithStatus or a simplified KPI item from ItemWithIdAndStatus
+const ListWithStatusDisplay: React.FC<{ title: string; items: (KeywordItemWithStatus | ItemWithIdAndStatus)[]; onStatusChange: (itemId: string, newStatus: Status) => void; listType?: 'keywordResearch' | 'kpis' }> = ({ title, items, onStatusChange }) => {
   if (!items || items.length === 0) return <p className="text-muted-foreground">No {title.toLowerCase()} available.</p>;
   
   const getStatusSpecificStyling = (status: Status) => {
@@ -62,11 +63,23 @@ const ListWithStatusDisplay: React.FC<{ title: string; items: ItemWithIdAndStatu
           <li 
             key={item.id}
             className={cn(
-              "flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-md border bg-card gap-3",
+              "flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 rounded-md border bg-card gap-3",
               getStatusSpecificStyling(item.status)
             )}
           >
-            <span className="flex-1">{item.text}</span>
+            <div className="flex-1 space-y-1">
+              <span>{item.text}</span>
+              {('searchVolumeLast24h' in item && item.searchVolumeLast24h) && (
+                <p className="text-xs text-muted-foreground flex items-center">
+                  <Clock className="mr-1 h-3 w-3" /> 24h: {item.searchVolumeLast24h}
+                </p>
+              )}
+              {('searchVolumeLast7d' in item && item.searchVolumeLast7d) && (
+                <p className="text-xs text-muted-foreground flex items-center">
+                  <TrendingUp className="mr-1 h-3 w-3" /> 7d: {item.searchVolumeLast7d}
+                </p>
+              )}
+            </div>
             <StatusControl
               currentStatus={item.status}
               onStatusChange={(newStatus) => onStatusChange(item.id, newStatus)}
@@ -80,24 +93,39 @@ const ListWithStatusDisplay: React.FC<{ title: string; items: ItemWithIdAndStatu
 };
 
 
-const SectionDisplay: React.FC<{ title: string; content?: string | Record<string, any>; icon?: React.ElementType; chartData?: any[]; chartType?: 'bar'; itemsWithStatus?: ItemWithIdAndStatus[]; onItemsStatusChange?: (listType: 'keywordResearch' | 'kpis', itemId: string, newStatus: Status) => void; keywordListType?: 'primaryKeywords' | 'secondaryKeywords' | 'longTailKeywords' }> = 
-  ({ title, content, icon: Icon, chartData, chartType, itemsWithStatus, onItemsStatusChange, keywordListType }) => {
-  if (!content && !chartData && (!itemsWithStatus || itemsWithStatus.length === 0)) return null;
+const SectionDisplay: React.FC<{ title: string; content?: string | Record<string, any>; icon?: React.ElementType; chartData?: any[]; chartType?: 'bar'; onItemsStatusChange?: (listType: 'keywordResearch' | 'kpis', itemId: string, newStatus: Status) => void; }> = 
+  ({ title, content, icon: Icon, chartData, chartType, onItemsStatusChange }) => {
+  if (!content && !chartData) return null;
 
   const renderContent = (data: string | Record<string, any>): React.ReactNode => {
     if (typeof data === 'string') {
       return <MarkdownDisplay content={data} asCard={false} className="text-sm"/>;
     }
     if (typeof data === 'object' && data !== null) {
-      // Special handling for keywordResearch object which contains arrays of ItemWithStatus
+      // Special handling for keywordResearch object
       if (title === "Keyword Research" && 'primaryKeywords' in data && onItemsStatusChange) {
         const keywordData = data as GenerateLocalSEOStrategyOutput['keywordResearch'];
         return (
           <div className="space-y-4">
-            <ListWithStatusDisplay title="Primary Keywords" items={keywordData.primaryKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} listType="keywordResearch" />
-            <ListWithStatusDisplay title="Secondary Keywords" items={keywordData.secondaryKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} listType="keywordResearch" />
-            <ListWithStatusDisplay title="Long-Tail Keywords" items={keywordData.longTailKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} listType="keywordResearch"/>
+            <ListWithStatusDisplay title="Primary Keywords" items={keywordData.primaryKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
+            <ListWithStatusDisplay title="Secondary Keywords" items={keywordData.secondaryKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
+            <ListWithStatusDisplay title="Long-Tail Keywords" items={keywordData.longTailKeywords} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
             {keywordData.toolsMention && <div><strong>Tools Mentioned:</strong> <MarkdownDisplay content={keywordData.toolsMention} asCard={false} className="text-sm inline"/></div>}
+          </div>
+        );
+      }
+      // Special handling for Tracking & Reporting KPIs
+      if (title === "Tracking & Reporting" && 'kpis' in data && Array.isArray((data as any).kpis) && onItemsStatusChange) {
+        const trackingData = data as GenerateLocalSEOStrategyOutput['trackingReporting'];
+        return (
+          <div className="space-y-4">
+            {trackingData.googleAnalytics && <p><strong>Google Analytics:</strong> {trackingData.googleAnalytics}</p>}
+            {trackingData.googleSearchConsole && <p><strong>Google Search Console:</strong> {trackingData.googleSearchConsole}</p>}
+            <ListWithStatusDisplay 
+              title="Key Performance Indicators (KPIs)" 
+              items={trackingData.kpis} 
+              onStatusChange={(id, status) => onItemsStatusChange('kpis', id, status)}
+            />
           </div>
         );
       }
@@ -105,10 +133,6 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
       return (
         <div className="space-y-2">
           {Object.entries(data).map(([key, value]) => {
-             if (Array.isArray(value) && value.every(i => typeof i === 'object' && 'id' in i && 'text' in i && 'status' in i) && onItemsStatusChange) {
-               // This case is for KPIs
-               return <ListWithStatusDisplay key={key} title={key.replace(/([A-Z])/g, ' $1').trim()} items={value as ItemWithIdAndStatus[]} onStatusChange={(id, status) => onItemsStatusChange('kpis', id, status)} listType="kpis"/>;
-             }
             return (
               <div key={key}>
                 <strong className="capitalize">{key.replace(/([A-Z])/g, ' $1')}: </strong> 
@@ -132,19 +156,6 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
       </CardHeader>
       <CardContent>
         {content && renderContent(content)}
-        {itemsWithStatus && onItemsStatusChange && keywordListType && (
-           <ListWithStatusDisplay title="" items={itemsWithStatus} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
-        )}
-         {title === "Tracking & Reporting" && typeof content === 'object' && content !== null && 'kpis' in content && Array.isArray((content as any).kpis) && onItemsStatusChange && (
-            <ListWithStatusDisplay 
-              title="Key Performance Indicators (KPIs)" 
-              items={(content as any).kpis as ItemWithIdAndStatus[]} 
-              onStatusChange={(id, status) => onItemsStatusChange('kpis', id, status)}
-              listType="kpis"
-            />
-        )}
-
-
         {chartType === 'bar' && chartData && chartData.length > 0 && (
           <div className="h-[300px] mt-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -257,23 +268,21 @@ export default function LocalSeoPage() {
     setResult(prevResult => {
       if (!prevResult) return null;
       let updatedResult = { ...prevResult };
-
+  
+      const mapItems = (items: (KeywordItemWithStatus | ItemWithIdAndStatus)[]) => 
+        items.map(item => item.id === itemId ? { ...item, status: newStatus } : item);
+      
       if (listType === 'keywordResearch' && updatedResult.keywordResearch) {
-        const mapKeywords = (keywords: ItemWithIdAndStatus[]) => 
-          keywords.map(item => item.id === itemId ? { ...item, status: newStatus } : item);
-        
         updatedResult.keywordResearch = {
           ...updatedResult.keywordResearch,
-          primaryKeywords: mapKeywords(updatedResult.keywordResearch.primaryKeywords),
-          secondaryKeywords: mapKeywords(updatedResult.keywordResearch.secondaryKeywords),
-          longTailKeywords: mapKeywords(updatedResult.keywordResearch.longTailKeywords),
+          primaryKeywords: mapItems(updatedResult.keywordResearch.primaryKeywords) as KeywordItemWithStatus[],
+          secondaryKeywords: mapItems(updatedResult.keywordResearch.secondaryKeywords) as KeywordItemWithStatus[],
+          longTailKeywords: mapItems(updatedResult.keywordResearch.longTailKeywords) as KeywordItemWithStatus[],
         };
       } else if (listType === 'kpis' && updatedResult.trackingReporting) {
         updatedResult.trackingReporting = {
           ...updatedResult.trackingReporting,
-          kpis: updatedResult.trackingReporting.kpis.map(item =>
-            item.id === itemId ? { ...item, status: newStatus } : item
-          ),
+          kpis: mapItems(updatedResult.trackingReporting.kpis) as KeywordItemWithStatus[], // Assuming kpis also conform to KeywordItemWithStatus or similar
         };
       }
       return updatedResult;

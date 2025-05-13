@@ -13,4 +13,6 @@ export interface ItemWithIdAndStatus<T = string> {
   id: string;
   text: T;
   status: Status;
+  searchVolumeLast24h?: string; // Optional: Estimated search volume (e.g., "approx 50", "low")
+  searchVolumeLast7d?: string;  // Optional: Estimated search volume
 }

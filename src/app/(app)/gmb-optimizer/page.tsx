@@ -20,11 +20,12 @@ import StatusControl from "@/components/common/StatusControl";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
-import { Loader2, Building } from "lucide-react";
+import { Loader2, Building, TrendingUp, Clock, SearchCheck } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import MarkdownDisplay from "@/components/common/markdown-display";
+import { cn } from "@/lib/utils";
 
-import type { GenerateGMBOptimizationsInput, GenerateGMBOptimizationsOutput } from '@/ai/flows/generate-gmb-optimizations';
+import type { GenerateGMBOptimizationsInput, GenerateGMBOptimizationsOutput, GMBKeywordSuggestion } from '@/ai/flows/generate-gmb-optimizations';
 import { generateGMBOptimizations } from '@/ai/flows/generate-gmb-optimizations';
 
 const formSchema = z.object({
@@ -36,9 +37,58 @@ const formSchema = z.object({
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
 
-type GMBSectionKey = 'keywordSuggestions' | 'descriptionSuggestions' | 'optimizationTips';
+type GMBSectionKey = 'descriptionSuggestions' | 'optimizationTips' | 'keywordSuggestionsSection';
 
 const LOCAL_STORAGE_KEY_GMB_OPTIMIZER = "gmbOptimizerResult";
+
+const KeywordListDisplay: React.FC<{ items: GMBKeywordSuggestion[]; onStatusChange: (itemId: string, newStatus: Status) => void; }> = ({ items, onStatusChange }) => {
+  if (!items || items.length === 0) return <p className="text-muted-foreground">No keyword suggestions available.</p>;
+
+  const getStatusSpecificStyling = (status: Status) => {
+    switch (status) {
+      case 'done':
+        return 'line-through text-muted-foreground opacity-70';
+      case 'rejected':
+        return 'text-destructive opacity-70';
+      default:
+        return '';
+    }
+  };
+  
+  return (
+    <ul className="space-y-3">
+      {items.map((item) => (
+        <li 
+          key={item.id}
+          className={cn(
+            "flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 rounded-md border bg-card gap-3",
+            getStatusSpecificStyling(item.status)
+          )}
+        >
+          <div className="flex-1 space-y-1">
+            <span>{item.text}</span>
+            {item.searchVolumeLast24h && (
+              <p className="text-xs text-muted-foreground flex items-center">
+                <Clock className="mr-1 h-3 w-3" /> 24h: {item.searchVolumeLast24h}
+              </p>
+            )}
+            {item.searchVolumeLast7d && (
+              <p className="text-xs text-muted-foreground flex items-center">
+                <TrendingUp className="mr-1 h-3 w-3" /> 7d: {item.searchVolumeLast7d}
+              </p>
+            )}
+          </div>
+          <StatusControl
+            currentStatus={item.status}
+            onStatusChange={(newStatus) => onStatusChange(item.id, newStatus)}
+            size="sm"
+          />
+        </li>
+      ))}
+    </ul>
+  );
+};
+
 
 export default function GmbOptimizerPage() {
   const { toast } = useToast();
@@ -129,6 +179,7 @@ export default function GmbOptimizerPage() {
   const handleSectionStatusChange = (sectionKey: GMBSectionKey, newStatus: Status) => {
     setResult(prevResult => {
       if (!prevResult) return null;
+      // For GMBSectionKey that ends with 'SectionStatus', map to the correct field in GenerateGMBOptimizationsOutput
       const statusFieldKey = `${sectionKey}Status` as keyof GenerateGMBOptimizationsOutput;
       return {
         ...prevResult,
@@ -136,6 +187,17 @@ export default function GmbOptimizerPage() {
       };
     });
   };
+
+  const handleKeywordItemStatusChange = (keywordId: string, newStatus: Status) => {
+    setResult(prevResult => {
+      if (!prevResult) return null;
+      const updatedKeywords = prevResult.keywordSuggestions.map(kw => 
+        kw.id === keywordId ? { ...kw, status: newStatus } : kw
+      );
+      return { ...prevResult, keywordSuggestions: updatedKeywords };
+    });
+  };
+
 
   return (
     <div className="space-y-8">
@@ -271,14 +333,17 @@ export default function GmbOptimizerPage() {
         <div className="space-y-6 mt-6">
           <Card>
             <CardHeader className="flex flex-row justify-between items-center">
-              <CardTitle>Keyword Suggestions</CardTitle>
+               <CardTitle className="flex items-center"><SearchCheck className="mr-2 h-6 w-6 text-primary" />Keyword Suggestions</CardTitle>
               <StatusControl
-                currentStatus={result.keywordSuggestionsStatus}
-                onStatusChange={(newStatus) => handleSectionStatusChange('keywordSuggestions', newStatus)}
+                currentStatus={result.keywordSuggestionsSectionStatus} // Status for the whole section
+                onStatusChange={(newStatus) => handleSectionStatusChange('keywordSuggestionsSection', newStatus)}
               />
             </CardHeader>
-            <CardContent><MarkdownDisplay content={result.keywordSuggestions} asCard={false} /></CardContent>
+            <CardContent>
+              <KeywordListDisplay items={result.keywordSuggestions} onStatusChange={handleKeywordItemStatusChange} />
+            </CardContent>
           </Card>
+
           <Card>
             <CardHeader className="flex flex-row justify-between items-center">
               <CardTitle>Description Suggestions</CardTitle>
@@ -301,7 +366,7 @@ export default function GmbOptimizerPage() {
           </Card>
         </div>
       )}
-       {result && !result.keywordSuggestions && !result.descriptionSuggestions && !result.optimizationTips && !isLoading && (
+       {result && (!result.keywordSuggestions || result.keywordSuggestions.length === 0) && !result.descriptionSuggestions && !result.optimizationTips && !isLoading && (
          <Card className="mt-6 shadow-lg">
            <CardHeader><CardTitle>No Optimizations Generated</CardTitle></CardHeader>
            <CardContent>
