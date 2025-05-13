@@ -8,13 +8,14 @@
  * - generateContentIdeas - A function that generates content ideas.
  * - GenerateContentIdeasInput - The input type for the generateContentIdeas function.
  * - GenerateContentIdeasOutput - The return type for the generateContentIdeas function.
+ * - GenerateContentIdeasInputSchema - The Zod schema for the input.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import type { Status } from '@/types/common'; // Import Status type
 
-const GenerateContentIdeasInputSchema = z.object({
+export const GenerateContentIdeasInputSchema = z.object({
   institutionName: z.string().describe('The name of the educational institution.'),
   institutionType: z
     .string()
