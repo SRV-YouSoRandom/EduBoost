@@ -21,9 +21,10 @@ import MarkdownDisplay from "@/components/common/markdown-display";
 import StatusControl from "@/components/common/StatusControl";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Loader2, BarChartBig, Wand2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
+import { supabase } from "@/lib/supabaseClient";
 
 import type { GeneratePerformanceMarketingStrategyInput, GeneratePerformanceMarketingStrategyOutput } from '@/ai/schemas/performance-marketing-schemas';
 import { generatePerformanceMarketingStrategy } from '@/ai/flows/generate-performance-marketing-strategy';
@@ -38,8 +39,6 @@ const formSchema = z.object({
   marketingBudget: z.string().min(1, "Marketing budget is required (e.g., $5000, Flexible)."),
   marketingGoals: z.string().min(10, "Marketing goals description is too short."),
 });
-
-const PAGE_STORAGE_PREFIX = "perfMarketingResult";
 
 
 export default function PerformanceMarketingPage() {
@@ -64,16 +63,27 @@ export default function PerformanceMarketingPage() {
     },
   });
   
-  const getCurrentStorageKey = (): string | null => {
-    if (activeInstitution?.id) {
-      return `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}`;
+  const fetchStrategy = useCallback(async (institutionId: string) => {
+    setIsPageLoading(true);
+    setResult(null);
+    const { data, error } = await supabase
+      .from('performance_marketing_strategies')
+      .select('strategy_data')
+      .eq('institution_id', institutionId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
+      console.error("Error fetching performance marketing strategy:", error);
+      toast({ title: "Error", description: "Could not fetch saved strategy.", variant: "destructive" });
+    } else if (data && data.strategy_data) {
+      setResult(data.strategy_data as GeneratePerformanceMarketingStrategyOutput);
     }
-    return null;
-  };
+    setIsPageLoading(false);
+  }, [toast]);
 
   useEffect(() => {
-    setIsPageLoading(true);
     if (activeInstitution) {
+      // Keep current form values for budget and goals if user has typed them
       const currentBudget = form.getValues("marketingBudget");
       const currentGoals = form.getValues("marketingGoals");
 
@@ -86,53 +96,46 @@ export default function PerformanceMarketingPage() {
         marketingBudget: currentBudget || "", 
         marketingGoals: currentGoals || "",   
       });
-
-      const key = getCurrentStorageKey();
-      if (key) {
-        const storedResult = localStorage.getItem(key);
-        if (storedResult) {
-          try {
-            setResult(JSON.parse(storedResult));
-          } catch (error) {
-            console.error(`Failed to parse stored perf marketing results for ${key}:`, error);
-            localStorage.removeItem(key); 
-            setResult(null);
-          }
-        } else {
-          setResult(null); 
-        }
-      }
+      fetchStrategy(activeInstitution.id);
     } else {
        form.reset({ 
         institutionName: "", institutionType: "", targetAudience: "",
         programsOffered: "", location: "", marketingBudget: "", marketingGoals: "",
       });
       setResult(null); 
+      setIsPageLoading(false);
     }
-    setIsPageLoading(false);
-  }, [activeInstitution]); 
+  }, [activeInstitution, form, fetchStrategy]); 
 
-  useEffect(() => {
-    if (!isPageLoading) {
-      const key = getCurrentStorageKey();
-      if (key && result) {
-        localStorage.setItem(key, JSON.stringify(result));
-      } else if (key && !result) {
-        localStorage.removeItem(key);
-      }
+  const saveStrategyToSupabase = async (strategyData: GeneratePerformanceMarketingStrategyOutput) => {
+    if (!activeInstitution) return;
+    // TODO: Add user_id when auth is available
+    const { error } = await supabase.from('performance_marketing_strategies').upsert({
+      institution_id: activeInstitution.id,
+      strategy_data: strategyData,
+      // user_id: userId
+    }, { onConflict: 'institution_id' });
+
+    if (error) {
+      console.error("Error saving performance marketing strategy:", error);
+      toast({ title: "Error Saving", description: "Could not save strategy.", variant: "destructive" });
+    } else {
+      toast({ title: "Strategy Saved", description: "Your performance marketing strategy has been saved." });
     }
-  }, [result, activeInstitution?.id, isPageLoading]);
+  };
 
 
   async function onInitialSubmit(values: z.infer<typeof formSchema>) {
+    if(!activeInstitution) return;
     setIsGenerating(true);
     setResult(null); 
     try {
       const data = await generatePerformanceMarketingStrategy(values);
       setResult(data); 
+      await saveStrategyToSupabase(data);
       toast({
         title: "Strategy Generated!",
-        description: "Your performance marketing strategy has been successfully created.",
+        description: "Your performance marketing strategy has been successfully created and saved.",
       });
     } catch (error) {
       console.error("Error generating performance marketing strategy:", error);
@@ -160,7 +163,6 @@ export default function PerformanceMarketingPage() {
         targetAudience: activeInstitution.targetAudience,
         programsOffered: activeInstitution.programsOffered,
         location: activeInstitution.location,
-        // Use current form values for budget/goals if they were part of the context for generation
         marketingBudget: form.getValues("marketingBudget"),
         marketingGoals: form.getValues("marketingGoals"),
       };
@@ -171,8 +173,9 @@ export default function PerformanceMarketingPage() {
       };
       const updatedStrategy = await refinePerformanceMarketingStrategy(refineInput);
       setResult(updatedStrategy);
+      await saveStrategyToSupabase(updatedStrategy);
       setRefinementPrompt("");
-      toast({ title: "Strategy Refined!", description: "The performance marketing strategy has been updated." });
+      toast({ title: "Strategy Refined!", description: "The performance marketing strategy has been updated and saved." });
     } catch (error) {
       console.error("Error refining performance marketing strategy:", error);
       toast({
@@ -185,11 +188,11 @@ export default function PerformanceMarketingPage() {
     }
   }
 
-  const handleDocumentStatusChange = (newStatus: Status) => {
-    setResult(prevResult => {
-      if (!prevResult) return null;
-      return { ...prevResult, documentStatus: newStatus };
-    });
+  const handleDocumentStatusChange = async (newStatus: Status) => {
+    if (!result || !activeInstitution) return;
+    const updatedResult = { ...result, documentStatus: newStatus };
+    setResult(updatedResult);
+    await saveStrategyToSupabase(updatedResult);
   };
 
   if (isInstitutionLoading || isPageLoading) {
@@ -256,7 +259,6 @@ export default function PerformanceMarketingPage() {
             <CardContent>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
-                  {/* Form fields repeated here for generating new */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="institutionType" render={({ field }) => (<FormItem><FormLabel>Institution Type</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
@@ -278,7 +280,7 @@ export default function PerformanceMarketingPage() {
         </div>
       )}
 
-      {!result && activeInstitution && !isGenerating && (
+      {!result && activeInstitution && !isGenerating && !isPageLoading && (
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>No Performance Marketing Strategy for {activeInstitution.name}</CardTitle>
@@ -308,7 +310,7 @@ export default function PerformanceMarketingPage() {
         </Card>
       )}
 
-       {!activeInstitution && !isGenerating && (
+       {!activeInstitution && !isGenerating && !isPageLoading && (
          <Card className="mt-6 shadow-lg">
            <CardHeader><CardTitle>No Institution Selected</CardTitle></CardHeader>
            <CardContent>

@@ -21,11 +21,12 @@ import MarkdownDisplay from "@/components/common/markdown-display";
 import StatusControl from "@/components/common/StatusControl";
 import type { Status, ItemWithIdAndStatus } from "@/types/common"; 
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText, TrendingUp, Clock, Wand2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabaseClient";
 
 import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput, KeywordItemWithStatus } from '@/ai/flows/generate-local-seo-strategy';
 import { generateLocalSEOStrategy } from '@/ai/flows/generate-local-seo-strategy';
@@ -39,8 +40,6 @@ const formSchema = z.object({
   targetAudience: z.string().min(10, "Target audience description is too short."),
   websiteUrl: z.string().url("Please enter a valid URL."),
 });
-
-const PAGE_STORAGE_PREFIX = "localSeoResult";
 
 
 const ListWithStatusDisplay: React.FC<{ title: string; items: (KeywordItemWithStatus | ItemWithIdAndStatus)[]; onStatusChange: (itemId: string, newStatus: Status) => void; listType?: 'keywordResearch' | 'kpis' }> = ({ title, items, onStatusChange }) => {
@@ -129,7 +128,6 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
           </div>
         );
       }
-      // Fallback for other objects
       return (
         <div className="space-y-2">
           {Object.entries(data).map(([key, value]) => {
@@ -142,7 +140,7 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
                 </div>
               );
             }
-             return ( // For nested objects, recursively call or handle differently. This is a simple display.
+             return ( 
               <div key={key} className="text-sm">
                 <strong className="capitalize block mb-1">{formattedKey}: </strong> 
                  {typeof value === 'object' ? <pre className="text-xs bg-muted p-2 rounded-md overflow-x-auto">{JSON.stringify(value, null, 2)}</pre> : String(value)}
@@ -190,11 +188,11 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
 export default function LocalSeoPage() {
   const { toast } = useToast();
   const { activeInstitution, isLoading: isInstitutionLoading } = useInstitutions();
-  const [isGenerating, setIsGenerating] = useState(false); // For initial generation
-  const [isRefining, setIsRefining] = useState(false); // For refinement
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
   const [result, setResult] = useState<GenerateLocalSEOStrategyOutput | null>(null);
   const [refinementPrompt, setRefinementPrompt] = useState("");
-  const [isPageLoading, setIsPageLoading] = useState(true); // For loading data from localStorage
+  const [isPageLoading, setIsPageLoading] = useState(true);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -206,17 +204,27 @@ export default function LocalSeoPage() {
       websiteUrl: "",
     },
   });
-
-  const getCurrentStorageKey = (): string | null => {
-    if (activeInstitution?.id) {
-      return `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}`;
-    }
-    return null;
-  };
-
-  // Effect for loading/resetting form and loading stored result
-  useEffect(() => {
+  
+  const fetchStrategy = useCallback(async (institutionId: string) => {
     setIsPageLoading(true);
+    setResult(null);
+    const { data, error } = await supabase
+      .from('local_seo_strategies')
+      .select('strategy_data')
+      .eq('institution_id', institutionId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
+      console.error("Error fetching Local SEO strategy:", error);
+      toast({ title: "Error", description: "Could not fetch saved strategy.", variant: "destructive" });
+    } else if (data && data.strategy_data) {
+      setResult(data.strategy_data as GenerateLocalSEOStrategyOutput);
+    }
+    setIsPageLoading(false);
+  }, [toast]);
+
+
+  useEffect(() => {
     if (activeInstitution) {
       form.reset({
         institutionName: activeInstitution.name,
@@ -225,53 +233,46 @@ export default function LocalSeoPage() {
         targetAudience: activeInstitution.targetAudience,
         websiteUrl: activeInstitution.websiteUrl || "",
       });
-      const key = getCurrentStorageKey();
-      if (key) {
-        const storedResult = localStorage.getItem(key);
-        if (storedResult) {
-          try {
-            setResult(JSON.parse(storedResult));
-          } catch (error) {
-            console.error(`Failed to parse stored local SEO results for ${key}:`, error);
-            localStorage.removeItem(key);
-            setResult(null);
-          }
-        } else {
-          setResult(null);
-        }
-      }
+      fetchStrategy(activeInstitution.id);
     } else {
       form.reset({
         institutionName: "", location: "", programsOffered: "",
         targetAudience: "", websiteUrl: "",
       });
       setResult(null);
+      setIsPageLoading(false);
     }
-    setIsPageLoading(false);
-  }, [activeInstitution]);
+  }, [activeInstitution, form, fetchStrategy]);
 
-  // Effect for saving result to localStorage
-  useEffect(() => {
-    if (!isPageLoading) { // Only save after initial load
-      const key = getCurrentStorageKey();
-      if (key && result) {
-        localStorage.setItem(key, JSON.stringify(result));
-      } else if (key && !result) { 
-        localStorage.removeItem(key);
-      }
+  const saveStrategyToSupabase = async (strategyData: GenerateLocalSEOStrategyOutput) => {
+    if (!activeInstitution) return;
+    // TODO: Add user_id when auth is available
+    const { error } = await supabase.from('local_seo_strategies').upsert({
+      institution_id: activeInstitution.id,
+      strategy_data: strategyData,
+      // user_id: userId // Add this when auth is implemented
+    }, { onConflict: 'institution_id' });
+
+    if (error) {
+      console.error("Error saving Local SEO strategy:", error);
+      toast({ title: "Error Saving", description: "Could not save strategy.", variant: "destructive" });
+    } else {
+      toast({ title: "Strategy Saved", description: "Your Local SEO strategy has been saved." });
     }
-  }, [result, activeInstitution?.id, isPageLoading]);
+  };
 
 
   async function onInitialSubmit(values: z.infer<typeof formSchema>) {
+    if (!activeInstitution) return;
     setIsGenerating(true);
     setResult(null); 
     try {
       const data = await generateLocalSEOStrategy(values);
       setResult(data);
+      await saveStrategyToSupabase(data);
       toast({
         title: "Strategy Generated!",
-        description: "Your local SEO strategy has been successfully created.",
+        description: "Your local SEO strategy has been successfully created and saved.",
       });
     } catch (error) {
       console.error("Error generating local SEO strategy:", error);
@@ -280,7 +281,7 @@ export default function LocalSeoPage() {
         description: (error as Error).message || "Could not generate the local SEO strategy. Please try again.",
         variant: "destructive",
       });
-      setResult(null); // Ensure result is null on error
+      setResult(null);
     } finally {
       setIsGenerating(false);
     }
@@ -307,8 +308,9 @@ export default function LocalSeoPage() {
       };
       const updatedStrategy = await refineLocalSEOStrategy(refineInput);
       setResult(updatedStrategy);
+      await saveStrategyToSupabase(updatedStrategy);
       setRefinementPrompt(""); 
-      toast({ title: "Strategy Refined!", description: "The local SEO strategy has been updated based on your prompt." });
+      toast({ title: "Strategy Refined!", description: "The local SEO strategy has been updated and saved." });
     } catch (error) {
       console.error("Error refining local SEO strategy:", error);
       toast({
@@ -321,33 +323,33 @@ export default function LocalSeoPage() {
     }
   }
   
-  const handleItemStatusChange = (
+  const handleItemStatusChange = async (
     listType: 'keywordResearch' | 'kpis',
     itemId: string,
     newStatus: Status
   ) => {
-    setResult(prevResult => {
-      if (!prevResult) return null;
-      let updatedResult = { ...prevResult };
+    if (!result || !activeInstitution) return;
+
+    let updatedResult = { ...result };
   
-      const mapItems = (items: (KeywordItemWithStatus | ItemWithIdAndStatus)[]) => 
-        items.map(item => item.id === itemId ? { ...item, status: newStatus } : item);
-      
-      if (listType === 'keywordResearch' && updatedResult.keywordResearch) {
-        updatedResult.keywordResearch = {
-          ...updatedResult.keywordResearch,
-          primaryKeywords: mapItems(updatedResult.keywordResearch.primaryKeywords || []) as KeywordItemWithStatus[],
-          secondaryKeywords: mapItems(updatedResult.keywordResearch.secondaryKeywords || []) as KeywordItemWithStatus[],
-          longTailKeywords: mapItems(updatedResult.keywordResearch.longTailKeywords || []) as KeywordItemWithStatus[],
-        };
-      } else if (listType === 'kpis' && updatedResult.trackingReporting) {
-        updatedResult.trackingReporting = {
-          ...updatedResult.trackingReporting,
-          kpis: mapItems(updatedResult.trackingReporting.kpis || []) as KeywordItemWithStatus[], 
-        };
-      }
-      return updatedResult;
-    });
+    const mapItems = (items: (KeywordItemWithStatus | ItemWithIdAndStatus)[]) => 
+      items.map(item => item.id === itemId ? { ...item, status: newStatus } : item);
+    
+    if (listType === 'keywordResearch' && updatedResult.keywordResearch) {
+      updatedResult.keywordResearch = {
+        ...updatedResult.keywordResearch,
+        primaryKeywords: mapItems(updatedResult.keywordResearch.primaryKeywords || []) as KeywordItemWithStatus[],
+        secondaryKeywords: mapItems(updatedResult.keywordResearch.secondaryKeywords || []) as KeywordItemWithStatus[],
+        longTailKeywords: mapItems(updatedResult.keywordResearch.longTailKeywords || []) as KeywordItemWithStatus[],
+      };
+    } else if (listType === 'kpis' && updatedResult.trackingReporting) {
+      updatedResult.trackingReporting = {
+        ...updatedResult.trackingReporting,
+        kpis: mapItems(updatedResult.trackingReporting.kpis || []) as KeywordItemWithStatus[], 
+      };
+    }
+    setResult(updatedResult);
+    await saveStrategyToSupabase(updatedResult);
   };
   
   const getKeywordChartData = (keywordResearch: GenerateLocalSEOStrategyOutput['keywordResearch'] | undefined) => {
@@ -383,7 +385,6 @@ export default function LocalSeoPage() {
         icon={MapPin}
       />
 
-      {/* Display Existing Strategy and Refinement Options */}
       {result && activeInstitution && (
         <div className="space-y-6">
           <SectionDisplay title="Executive Summary" content={result.executiveSummary} icon={FileText} />
@@ -445,8 +446,7 @@ export default function LocalSeoPage() {
         </div>
       )}
 
-      {/* Initial Generation Form or No Data Message */}
-      {!result && activeInstitution && !isGenerating && (
+      {!result && activeInstitution && !isGenerating && !isPageLoading && (
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>No Local SEO Strategy Available for {activeInstitution.name}</CardTitle>
@@ -471,7 +471,7 @@ export default function LocalSeoPage() {
         </Card>
       )}
 
-      {!activeInstitution && !isGenerating && (
+      {!activeInstitution && !isGenerating && !isPageLoading &&(
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>No Institution Selected</CardTitle>
@@ -482,7 +482,7 @@ export default function LocalSeoPage() {
         </Card>
       )}
       
-      {isGenerating && ( // Specific loading indicator for generation process
+      {isGenerating && (
         <div className="text-center py-10">
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-lg text-muted-foreground">Generating your local SEO strategy, please wait...</p>

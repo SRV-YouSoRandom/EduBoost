@@ -1,104 +1,147 @@
+
 "use client";
 
 import type { Institution } from "@/types/institution";
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { supabase } from "@/lib/supabaseClient";
+import { fromSupabaseInstitution, toSupabaseInstitutionInsert, toSupabaseInstitutionUpdate, Database } from "@/types/supabase";
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
+import { useToast } from "@/hooks/use-toast"; // For user feedback
 
 interface InstitutionContextType {
   institutions: Institution[];
   activeInstitution: Institution | null;
-  addInstitution: (institution: Omit<Institution, 'id'>) => void;
-  updateInstitution: (id: string, data: Partial<Omit<Institution, 'id'>>) => void;
-  deleteInstitution: (id: string) => void;
+  addInstitution: (institution: Omit<Institution, 'id'>) => Promise<Institution | null>;
+  updateInstitution: (id: string, data: Partial<Omit<Institution, 'id'>>) => Promise<Institution | null>;
+  deleteInstitution: (id: string) => Promise<void>;
   selectInstitution: (id: string | null) => void;
   isLoading: boolean;
+  fetchInstitutions: () => Promise<void>; // Expose fetch function
 }
 
 const InstitutionContext = createContext<InstitutionContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY_INSTITUTIONS = 'eduboost_institutions';
-const LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID = 'eduboost_active_institution_id';
+const LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID = 'eduboost_active_institution_id'; // Keep this for active selection UI persistence
 
 export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [activeInstitution, setActiveInstitution] = useState<Institution | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
-  useEffect(() => {
-    try {
-      const storedInstitutions = localStorage.getItem(LOCAL_STORAGE_KEY_INSTITUTIONS);
-      if (storedInstitutions) {
-        const parsedInstitutions: Institution[] = JSON.parse(storedInstitutions);
-        setInstitutions(parsedInstitutions);
-        
-        const storedActiveId = localStorage.getItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID);
-        if (storedActiveId) {
-          const foundActive = parsedInstitutions.find(inst => inst.id === storedActiveId);
-          if (foundActive) {
-            setActiveInstitution(foundActive);
-          } else if (parsedInstitutions.length > 0) { // Active ID exists but not in list, set to first
-            setActiveInstitution(parsedInstitutions[0]);
-            localStorage.setItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID, parsedInstitutions[0].id);
-          } else { // No institutions left
-            setActiveInstitution(null);
-            localStorage.removeItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID);
-          }
-        } else if (parsedInstitutions.length > 0) {
-          setActiveInstitution(parsedInstitutions[0]);
-          localStorage.setItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID, parsedInstitutions[0].id);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to load institutions from localStorage:", error);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_INSTITUTIONS);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID);
-    }
-    setIsLoading(false);
-  }, []);
+  const fetchInstitutions = useCallback(async () => {
+    setIsLoading(true);
+    // TODO: When auth is implemented, filter by user_id: .eq('user_id', session.user.id)
+    const { data, error } = await supabase.from('institutions').select('*').order('created_at', { ascending: false });
 
-  useEffect(() => {
-    if (!isLoading) {
-      localStorage.setItem(LOCAL_STORAGE_KEY_INSTITUTIONS, JSON.stringify(institutions));
-    }
-  }, [institutions, isLoading]);
+    if (error) {
+      console.error("Error fetching institutions:", error);
+      toast({ title: "Error", description: "Could not fetch institutions.", variant: "destructive" });
+      setInstitutions([]);
+    } else if (data) {
+      const fetchedInstitutions = data.map(fromSupabaseInstitution);
+      setInstitutions(fetchedInstitutions);
 
-  useEffect(() => {
-    if (!isLoading) {
-      if (activeInstitution) {
-        localStorage.setItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID, activeInstitution.id);
-      } else {
-        localStorage.removeItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID);
-      }
-    }
-  }, [activeInstitution, isLoading]);
-
-
-  const addInstitution = (institutionData: Omit<Institution, 'id'>) => {
-    const newInstitution: Institution = { ...institutionData, id: Date.now().toString() };
-    setInstitutions(prev => [...prev, newInstitution]);
-    if (!activeInstitution || institutions.length === 0) {
-      setActiveInstitution(newInstitution);
-    }
-  };
-
-  const updateInstitution = (id: string, data: Partial<Omit<Institution, 'id'>>) => {
-    setInstitutions(prev => 
-      prev.map(inst => inst.id === id ? { ...inst, ...data } : inst)
-    );
-    if (activeInstitution?.id === id) {
-      setActiveInstitution(prev => prev ? { ...prev, ...data } : null);
-    }
-  };
-
-  const deleteInstitution = (id: string) => {
-    setInstitutions(prev => prev.filter(inst => inst.id !== id));
-    if (activeInstitution?.id === id) {
-      const remainingInstitutions = institutions.filter(inst => inst.id !== id);
-      if (remainingInstitutions.length > 0) {
-        setActiveInstitution(remainingInstitutions[0]);
+      const storedActiveId = localStorage.getItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID);
+      if (storedActiveId) {
+        const foundActive = fetchedInstitutions.find(inst => inst.id === storedActiveId);
+        setActiveInstitution(foundActive || (fetchedInstitutions.length > 0 ? fetchedInstitutions[0] : null));
+      } else if (fetchedInstitutions.length > 0) {
+        setActiveInstitution(fetchedInstitutions[0]);
       } else {
         setActiveInstitution(null);
       }
     }
+    setIsLoading(false);
+  }, [toast]);
+
+  useEffect(() => {
+    fetchInstitutions();
+  }, [fetchInstitutions]);
+
+  useEffect(() => {
+    // Persist active institution ID to localStorage for UI convenience
+    if (activeInstitution) {
+      localStorage.setItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID, activeInstitution.id);
+    } else {
+      localStorage.removeItem(LOCAL_STORAGE_KEY_ACTIVE_INSTITUTION_ID);
+    }
+  }, [activeInstitution]);
+
+  const addInstitution = async (institutionData: Omit<Institution, 'id'>): Promise<Institution | null> => {
+    setIsLoading(true);
+    // TODO: Get actual user_id from session when auth is added
+    const supabaseData = toSupabaseInstitutionInsert(institutionData, null); 
+    
+    const { data, error } = await supabase
+      .from('institutions')
+      .insert(supabaseData)
+      .select()
+      .single();
+
+    setIsLoading(false);
+    if (error) {
+      console.error("Error adding institution:", error);
+      toast({ title: "Error", description: "Could not add institution.", variant: "destructive" });
+      return null;
+    }
+    if (data) {
+      const newInstitution = fromSupabaseInstitution(data);
+      setInstitutions(prev => [newInstitution, ...prev]); // Add to start of list
+      if (!activeInstitution || institutions.length === 0) {
+        setActiveInstitution(newInstitution);
+      }
+      return newInstitution;
+    }
+    return null;
+  };
+
+  const updateInstitution = async (id: string, updateData: Partial<Omit<Institution, 'id'>>): Promise<Institution | null> => {
+    setIsLoading(true);
+    const supabaseUpdateData = toSupabaseInstitutionUpdate(updateData);
+    const { data, error } = await supabase
+      .from('institutions')
+      .update(supabaseUpdateData)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    setIsLoading(false);
+    if (error) {
+      console.error("Error updating institution:", error);
+      toast({ title: "Error", description: "Could not update institution.", variant: "destructive" });
+      return null;
+    }
+    if (data) {
+      const updatedInstitution = fromSupabaseInstitution(data);
+      setInstitutions(prev => 
+        prev.map(inst => inst.id === id ? updatedInstitution : inst)
+      );
+      if (activeInstitution?.id === id) {
+        setActiveInstitution(updatedInstitution);
+      }
+      return updatedInstitution;
+    }
+    return null;
+  };
+
+  const deleteInstitution = async (id: string): Promise<void> => {
+    setIsLoading(true);
+    // Also delete related strategies when an institution is deleted (cascade delete in DB or manual here)
+    // For now, just deleting the institution. Cascade delete is preferred.
+    const { error } = await supabase.from('institutions').delete().eq('id', id);
+    setIsLoading(false);
+    if (error) {
+      console.error("Error deleting institution:", error);
+      toast({ title: "Error", description: "Could not delete institution.", variant: "destructive" });
+      return;
+    }
+    
+    const remainingInstitutions = institutions.filter(inst => inst.id !== id);
+    setInstitutions(remainingInstitutions);
+    if (activeInstitution?.id === id) {
+      setActiveInstitution(remainingInstitutions.length > 0 ? remainingInstitutions[0] : null);
+    }
+    toast({ title: "Success", description: "Institution deleted." });
   };
 
   const selectInstitution = (id: string | null) => {
@@ -118,7 +161,8 @@ export const InstitutionProvider: React.FC<{ children: ReactNode }> = ({ childre
       updateInstitution, 
       deleteInstitution, 
       selectInstitution, 
-      isLoading 
+      isLoading,
+      fetchInstitutions
     }}>
       {children}
     </InstitutionContext.Provider>

@@ -20,11 +20,12 @@ import PageHeaderTitle from "@/components/common/page-header-title";
 import StatusControl from "@/components/common/StatusControl";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Loader2, Building, TrendingUp, Clock, SearchCheck, Wand2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import MarkdownDisplay from "@/components/common/markdown-display";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabaseClient";
 
 import type { GenerateGMBOptimizationsInput, GenerateGMBOptimizationsOutput, GMBKeywordSuggestion } from '@/ai/schemas/gmb-optimizer-schemas';
 import { generateGMBOptimizations } from '@/ai/flows/generate-gmb-optimizations';
@@ -42,7 +43,6 @@ const formSchema = z.object({
 
 type GMBSectionKey = 'descriptionSuggestions' | 'optimizationTips' | 'keywordSuggestionsSection';
 
-const PAGE_STORAGE_PREFIX = "gmbOptimizerResult";
 
 const KeywordListDisplay: React.FC<{ items: GMBKeywordSuggestion[]; onStatusChange: (itemId: string, newStatus: Status) => void; }> = ({ items, onStatusChange }) => {
   if (!items || items.length === 0) return <p className="text-muted-foreground">No keyword suggestions available.</p>;
@@ -114,15 +114,25 @@ export default function GmbOptimizerPage() {
     },
   });
 
-  const getCurrentStorageKey = (): string | null => {
-    if (activeInstitution?.id) {
-      return `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}`;
+  const fetchOptimizations = useCallback(async (institutionId: string) => {
+    setIsPageLoading(true);
+    setResult(null);
+    const { data, error } = await supabase
+      .from('gmb_optimizations')
+      .select('optimization_data')
+      .eq('institution_id', institutionId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
+      console.error("Error fetching GMB optimizations:", error);
+      toast({ title: "Error", description: "Could not fetch saved optimizations.", variant: "destructive" });
+    } else if (data && data.optimization_data) {
+      setResult(data.optimization_data as GenerateGMBOptimizationsOutput);
     }
-    return null;
-  };
+    setIsPageLoading(false);
+  }, [toast]);
 
   useEffect(() => {
-    setIsPageLoading(true);
     if (activeInstitution) {
       form.reset({
         institutionName: activeInstitution.name,
@@ -132,52 +142,46 @@ export default function GmbOptimizerPage() {
         targetAudience: activeInstitution.targetAudience,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       });
-      const key = getCurrentStorageKey();
-      if (key) {
-        const storedResult = localStorage.getItem(key);
-        if (storedResult) {
-          try {
-            setResult(JSON.parse(storedResult));
-          } catch (error) {
-            console.error(`Failed to parse stored GMB results for ${key}:`, error);
-            localStorage.removeItem(key); 
-            setResult(null);
-          }
-        } else {
-          setResult(null); 
-        }
-      }
+      fetchOptimizations(activeInstitution.id);
     } else {
       form.reset({
         institutionName: "", institutionType: "", location: "",
         programsOffered: "", targetAudience: "", uniqueSellingPoints: "",
       });
-      setResult(null); 
+      setResult(null);
+      setIsPageLoading(false);
     }
-    setIsPageLoading(false);
-  }, [activeInstitution]);
-  
-  useEffect(() => {
-    if(!isPageLoading) {
-      const key = getCurrentStorageKey();
-      if (key && result) {
-        localStorage.setItem(key, JSON.stringify(result));
-      } else if (key && !result) {
-        localStorage.removeItem(key);
-      }
+  }, [activeInstitution, form, fetchOptimizations]);
+
+  const saveOptimizationsToSupabase = async (optimizationsData: GenerateGMBOptimizationsOutput) => {
+    if (!activeInstitution) return;
+    // TODO: Add user_id when auth is available
+    const { error } = await supabase.from('gmb_optimizations').upsert({
+      institution_id: activeInstitution.id,
+      optimization_data: optimizationsData,
+      // user_id: userId 
+    }, { onConflict: 'institution_id' });
+
+    if (error) {
+      console.error("Error saving GMB optimizations:", error);
+      toast({ title: "Error Saving", description: "Could not save optimizations.", variant: "destructive" });
+    } else {
+      toast({ title: "Optimizations Saved", description: "Your GMB optimizations have been saved." });
     }
-  }, [result, activeInstitution?.id, isPageLoading]);
+  };
 
 
   async function onInitialSubmit(values: z.infer<typeof formSchema>) {
+    if (!activeInstitution) return;
     setIsGenerating(true);
     setResult(null);
     try {
       const data = await generateGMBOptimizations(values);
       setResult(data); 
+      await saveOptimizationsToSupabase(data);
       toast({
         title: "Optimizations Generated!",
-        description: "Your GMB optimization suggestions have been successfully created.",
+        description: "Your GMB optimization suggestions have been successfully created and saved.",
       });
     } catch (error) {
       console.error("Error generating GMB optimizations:", error);
@@ -214,8 +218,9 @@ export default function GmbOptimizerPage() {
       };
       const updatedStrategy = await refineGMBOptimizations(refineInput);
       setResult(updatedStrategy);
+      await saveOptimizationsToSupabase(updatedStrategy);
       setRefinementPrompt(""); 
-      toast({ title: "Optimizations Refined!", description: "The GMB optimizations have been updated." });
+      toast({ title: "Optimizations Refined!", description: "The GMB optimizations have been updated and saved." });
     } catch (error) {
       console.error("Error refining GMB optimizations:", error);
       toast({
@@ -229,28 +234,28 @@ export default function GmbOptimizerPage() {
   }
 
 
-  const handleSectionStatusChange = (sectionKey: GMBSectionKey, newStatus: Status) => {
-    setResult(prevResult => {
-      if (!prevResult) return null;
-      const statusFieldKey = sectionKey === 'keywordSuggestionsSection' 
-        ? 'keywordSuggestionsSectionStatus' 
-        : `${sectionKey}Status` as keyof GenerateGMBOptimizationsOutput;
+  const handleSectionStatusChange = async (sectionKey: GMBSectionKey, newStatus: Status) => {
+    if (!result || !activeInstitution) return;
+    const statusFieldKey = sectionKey === 'keywordSuggestionsSection' 
+      ? 'keywordSuggestionsSectionStatus' 
+      : `${sectionKey}Status` as keyof GenerateGMBOptimizationsOutput;
 
-      return {
-        ...prevResult,
-        [statusFieldKey]: newStatus,
-      };
-    });
+    const updatedResult = {
+      ...result,
+      [statusFieldKey]: newStatus,
+    };
+    setResult(updatedResult);
+    await saveOptimizationsToSupabase(updatedResult);
   };
 
-  const handleKeywordItemStatusChange = (keywordId: string, newStatus: Status) => {
-    setResult(prevResult => {
-      if (!prevResult) return null;
-      const updatedKeywords = prevResult.keywordSuggestions.map(kw => 
-        kw.id === keywordId ? { ...kw, status: newStatus } : kw
-      );
-      return { ...prevResult, keywordSuggestions: updatedKeywords };
-    });
+  const handleKeywordItemStatusChange = async (keywordId: string, newStatus: Status) => {
+    if (!result || !activeInstitution) return;
+    const updatedKeywords = result.keywordSuggestions.map(kw => 
+      kw.id === keywordId ? { ...kw, status: newStatus } : kw
+    );
+    const updatedResult = { ...result, keywordSuggestions: updatedKeywords };
+    setResult(updatedResult);
+    await saveOptimizationsToSupabase(updatedResult);
   };
 
   if (isInstitutionLoading || isPageLoading) {
@@ -356,7 +361,7 @@ export default function GmbOptimizerPage() {
         </div>
       )}
       
-      {!result && activeInstitution && !isGenerating && (
+      {!result && activeInstitution && !isGenerating && !isPageLoading && (
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle>No GMB Optimizations Available for {activeInstitution.name}</CardTitle>
@@ -383,14 +388,14 @@ export default function GmbOptimizerPage() {
         </Card>
       )}
 
-      {!activeInstitution && !isGenerating && (
+      {!activeInstitution && !isGenerating && !isPageLoading && (
          <Card className="mt-6 shadow-lg">
            <CardHeader><CardTitle>No Institution Selected</CardTitle></CardHeader>
            <CardContent>
              <p>Please select or create an institution to generate or view GMB optimizations.</p>
            </CardContent>
          </Card>
-      )}
+       )}
 
       {isGenerating && (
         <div className="text-center py-10">

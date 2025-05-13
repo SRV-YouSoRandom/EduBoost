@@ -21,12 +21,12 @@ import StatusControl from "@/components/common/StatusControl";
 import MarkdownDisplay from "@/components/common/markdown-display";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Loader2, Lightbulb, Sparkles, ChevronsUpDown, Wand2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-
+import { supabase } from "@/lib/supabaseClient";
 
 import type { GenerateContentIdeasInput, GenerateContentIdeasOutput, ContentIdeaWithStatus } from '@/ai/schemas/content-ideas-schemas';
 import { generateContentIdeas } from '@/ai/flows/generate-content-ideas';
@@ -42,7 +42,6 @@ const formSchema = z.object({
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
 
-const PAGE_STORAGE_PREFIX = "contentIdeasResult";
 
 export default function ContentIdeasPage() {
   const { toast } = useToast();
@@ -66,15 +65,25 @@ export default function ContentIdeasPage() {
     },
   });
 
-  const getCurrentStorageKey = (): string | null => {
-    if (activeInstitution?.id) {
-      return `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}`;
+  const fetchIdeas = useCallback(async (institutionId: string) => {
+    setIsPageLoading(true);
+    setResult(null);
+    const { data, error } = await supabase
+      .from('content_ideas')
+      .select('ideas_data')
+      .eq('institution_id', institutionId)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
+      console.error("Error fetching content ideas:", error);
+      toast({ title: "Error", description: "Could not fetch saved content ideas.", variant: "destructive" });
+    } else if (data && data.ideas_data) {
+      setResult(data.ideas_data as GenerateContentIdeasOutput);
     }
-    return null;
-  };
+    setIsPageLoading(false);
+  }, [toast]);
   
   useEffect(() => {
-    setIsPageLoading(true);
     if (activeInstitution) {
       form.reset({
         institutionName: activeInstitution.name,
@@ -83,54 +92,47 @@ export default function ContentIdeasPage() {
         programsOffered: activeInstitution.programsOffered,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       });
-      const key = getCurrentStorageKey();
-      if (key) {
-        const storedResult = localStorage.getItem(key);
-        if (storedResult) {
-          try {
-            setResult(JSON.parse(storedResult));
-          } catch (error) {
-            console.error(`Failed to parse stored content ideas for ${key}:`, error);
-            localStorage.removeItem(key); 
-            setResult(null);
-          }
-        } else {
-          setResult(null); 
-        }
-      }
+      fetchIdeas(activeInstitution.id);
     } else {
        form.reset({ 
         institutionName: "", institutionType: "", targetAudience: "",
         programsOffered: "", uniqueSellingPoints: "",
       });
       setResult(null); 
+      setOpenCollapsibles({}); 
+      setIsPageLoading(false);
     }
-    setOpenCollapsibles({}); 
-    setIsPageLoading(false);
-  }, [activeInstitution, form]); // Added form to dependency array
+  }, [activeInstitution, form, fetchIdeas]);
 
+  const saveIdeasToSupabase = async (ideasData: GenerateContentIdeasOutput) => {
+    if (!activeInstitution) return;
+    // TODO: Add user_id when auth is available
+    const { error } = await supabase.from('content_ideas').upsert({
+      institution_id: activeInstitution.id,
+      ideas_data: ideasData,
+      // user_id: userId
+    }, { onConflict: 'institution_id' });
 
-  useEffect(() => {
-    if (!isPageLoading) {
-      const key = getCurrentStorageKey();
-      if (key && result) {
-        localStorage.setItem(key, JSON.stringify(result));
-      } else if (key && !result) {
-        localStorage.removeItem(key);
-      }
+    if (error) {
+      console.error("Error saving content ideas:", error);
+      toast({ title: "Error Saving", description: "Could not save content ideas.", variant: "destructive" });
+    } else {
+      toast({ title: "Ideas Saved", description: "Your content ideas have been saved." });
     }
-  }, [result, activeInstitution?.id, isPageLoading]);
+  };
 
 
   async function onInitialSubmit(values: z.infer<typeof formSchema>) {
+    if (!activeInstitution) return;
     setIsGenerating(true);
     setResult(null); 
     try {
       const data = await generateContentIdeas(values);
       setResult(data); 
+      await saveIdeasToSupabase(data);
       toast({
         title: "Content Ideas Generated!",
-        description: "A fresh batch of content ideas has been successfully created for you.",
+        description: "A fresh batch of content ideas has been successfully created and saved for you.",
       });
     } catch (error) {
       console.error("Error generating content ideas:", error);
@@ -166,8 +168,9 @@ export default function ContentIdeasPage() {
       };
       const updatedIdeas = await refineContentIdeas(refineInput);
       setResult(updatedIdeas);
+      await saveIdeasToSupabase(updatedIdeas);
       setRefinementPrompt("");
-      toast({ title: "Ideas Refined!", description: "The content ideas list has been updated." });
+      toast({ title: "Ideas Refined!", description: "The content ideas list has been updated and saved." });
     } catch (error) {
       console.error("Error refining content ideas:", error);
       toast({
@@ -180,19 +183,19 @@ export default function ContentIdeasPage() {
     }
   }
 
-  const handleStatusChange = (id: string, newStatus: Status) => {
-    setResult(prevResult => {
-      if (!prevResult) return null;
-      const updatedIdeas = prevResult.contentIdeas.map(idea =>
-        idea.id === id ? { ...idea, status: newStatus } : idea
-      );
-      return { ...prevResult, contentIdeas: updatedIdeas };
-    });
+  const handleStatusChange = async (id: string, newStatus: Status) => {
+    if (!result) return;
+    const updatedIdeasArray = result.contentIdeas.map(idea =>
+      idea.id === id ? { ...idea, status: newStatus } : idea
+    );
+    const updatedResult = { ...result, contentIdeas: updatedIdeasArray };
+    setResult(updatedResult);
+    await saveIdeasToSupabase(updatedResult);
   };
 
   const handleExpandIdea = async (ideaId: string, isRegeneration: boolean = false) => {
     const ideaToExpand = result?.contentIdeas.find(idea => idea.id === ideaId);
-    if (!ideaToExpand || !activeInstitution) {
+    if (!ideaToExpand || !activeInstitution || !result) {
        toast({
         title: "Cannot Expand Idea",
         description: "Please select an institution and ensure the idea exists.",
@@ -201,12 +204,13 @@ export default function ContentIdeasPage() {
       return;
     }
 
-    setResult(prev => prev ? ({
-      ...prev,
-      contentIdeas: prev.contentIdeas.map(idea => 
+    const newResultProcessing = {
+      ...result,
+      contentIdeas: result.contentIdeas.map(idea => 
         idea.id === ideaId ? { ...idea, isExpanding: true, expandedDetails: isRegeneration ? undefined : idea.expandedDetails } : idea
       ),
-    }) : null);
+    };
+    setResult(newResultProcessing);
 
     try {
       const institutionContext: GenerateContentIdeasInput = {
@@ -222,14 +226,17 @@ export default function ContentIdeasPage() {
       };
       const expansionResult = await expandContentIdea(expansionInput);
       
-      setResult(prev => prev ? ({
-        ...prev,
-        contentIdeas: prev.contentIdeas.map(idea =>
+      const finalResult = {
+        ...result,
+        contentIdeas: result.contentIdeas.map(idea =>
           idea.id === ideaId 
             ? { ...idea, expandedDetails: expansionResult.expandedDetails, isExpanding: false } 
             : idea
         ),
-      }) : null);
+      };
+      setResult(finalResult);
+      await saveIdeasToSupabase(finalResult);
+
       toast({
         title: isRegeneration ? "Details Re-generated!" : "Idea Expanded!",
         description: "Details have been successfully generated for the content idea. Check the expanded section.",
@@ -242,12 +249,15 @@ export default function ContentIdeasPage() {
         description: (error as Error).message || "Could not expand the content idea.",
         variant: "destructive",
       });
-      setResult(prev => prev ? ({
-        ...prev,
-        contentIdeas: prev.contentIdeas.map(idea =>
+      // Revert isExpanding status on error
+      const errorRevertedResult = {
+         ...result,
+        contentIdeas: result.contentIdeas.map(idea =>
           idea.id === ideaId ? { ...idea, isExpanding: false } : idea
         ),
-      }) : null);
+      };
+      setResult(errorRevertedResult);
+      // No need to save this partial state to Supabase, original result is still there.
     }
   };
   
@@ -380,9 +390,7 @@ export default function ContentIdeasPage() {
              <CardContent>
                <Form {...form}>
                  <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
-                   {/* Form fields are pre-filled from activeInstitution, display them as read-only or enable for override */}
                    <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input {...field} readOnly={!!activeInstitution} /></FormControl><FormMessage /></FormItem>)} />
-                   {/* Add other relevant fields if needed for re-generation context, or ensure they are used from activeInstitution */}
                    <Button type="submit" disabled={isGenerating || !activeInstitution || isRefining} className="w-full md:w-auto">
                      {isGenerating ? ( <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
                      ) : "Generate New Content Ideas"}
@@ -394,7 +402,7 @@ export default function ContentIdeasPage() {
         </>
       )}
 
-      {(!result || result.contentIdeas.length === 0) && activeInstitution && !isGenerating && (
+      {(!result || result.contentIdeas.length === 0) && activeInstitution && !isGenerating && !isPageLoading && (
          <Card className="shadow-lg">
            <CardHeader>
              <CardTitle>No Content Ideas for {activeInstitution.name}</CardTitle>
@@ -420,7 +428,7 @@ export default function ContentIdeasPage() {
          </Card>
       )}
       
-      {!activeInstitution && !isGenerating && (
+      {!activeInstitution && !isGenerating && !isPageLoading && (
          <Card className="mt-6 shadow-lg">
            <CardHeader><CardTitle>No Institution Selected</CardTitle></CardHeader>
            <CardContent>
@@ -438,4 +446,3 @@ export default function ContentIdeasPage() {
     </div>
   );
 }
-
