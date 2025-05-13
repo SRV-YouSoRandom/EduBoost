@@ -34,8 +34,8 @@ export async function generateLocalSEOStrategy(
 const prompt = ai.definePrompt({
   name: 'generateLocalSEOStrategyPrompt',
   input: {schema: GenerateLocalSEOStrategyInputSchema},
-  output: {schema: AIPromptOutputSchema}, // AI outputs the structure defined in AIPromptOutputSchema
-  prompt: `You are an expert local SEO strategist specializing in educational institutions, with deep knowledge of Google's SEO tools and best practices.
+  output: {schema: AIPromptOutputSchema}, 
+  prompt: `You are an expert local SEO strategist specializing in educational institutions, with deep knowledge of Google's SEO tools (Google Keyword Planner, Google Trends, Google Search Console, Google My Business Insights) and best practices.
 
   Based on the following information:
   Institution Name: {{{institutionName}}}
@@ -45,27 +45,56 @@ const prompt = ai.definePrompt({
   Website URL: {{{websiteUrl}}}
 
   Generate a comprehensive local SEO strategy as a JSON object.
-  The JSON object MUST conform to the defined output schema (AI version, referring to AIPromptOutputSchema).
+  The JSON object MUST conform to the defined output schema (AIPromptOutputSchema).
   Each field in the JSON object should contain actionable advice, lists, or summaries as per the schema descriptions.
-  For string fields requiring strategic advice, provide concise text. This text can use simple markdown (like bolding for emphasis) if it enhances readability.
+  For string fields requiring strategic advice, provide concise, specific, and actionable text. This text can use simple markdown (like bolding for emphasis, or bullet points using '*' or '-') if it enhances readability within the string.
   
-  For keyword arrays in 'keywordResearch' (primaryKeywords, secondaryKeywords, longTailKeywords), each item MUST be an object with the following fields:
-  - "text": The keyword itself.
-  - "searchVolumeLast24h": An estimated search volume for this keyword in the institution's location ({{{location}}}) over the last 24 hours. State if data is unavailable or an approximation (e.g., 'approx. 10-20', 'low', 'unavailable').
-  - "searchVolumeLast7d": An estimated search volume for this keyword in the institution's location ({{{location}}}) over the last 7 days. State if data is unavailable or an approximation (e.g., 'approx. 100-150', 'medium', 'unavailable').
-  
-  For the 'kpis' array in 'trackingReporting', each item MUST be an object with the field:
-  - "text": The KPI description (e.g., "Increase in local pack rankings for primary keywords").
+  **Keyword Research ('keywordResearch'):**
+  - For 'primaryKeywords', 'secondaryKeywords', and 'longTailKeywords', each item MUST be an object with:
+    - "text": The keyword itself (e.g., "best coding bootcamp {{{location}}}", "{{{institutionType}}} admissions {{{location}}}").
+    - "searchVolumeLast24h": An *estimated* search volume (e.g., 'approx. 10-20', 'low', 'medium', 'high', 'unavailable').
+    - "searchVolumeLast7d": An *estimated* search volume (e.g., 'approx. 100-150', 'medium-high', 'high', 'unavailable').
+  - Primary: 3-5 core local keywords.
+  - Secondary: 5-7 related keywords, including program-specific terms.
+  - Long-Tail: 3-5 examples of longer, more specific queries.
+  - 'toolsMention': Briefly mention using Google Keyword Planner for volume ideas and Google Trends for seasonality.
 
-  Structure your response to populate the following fields according to the AI output schema:
-  - executiveSummary
-  - keywordResearch (including primaryKeywords, secondaryKeywords, longTailKeywords as arrays of keyword objects with text and search volume estimates, toolsMention)
-  - gmbOptimization (covering profileCompleteness, napConsistency, categories, servicesProducts, photosVideos, gmbPosts, qaSection, reviewsStrategy)
-  - onPageLocalSEO (covering localizedContent, titleTagsMetaDescriptions, headerTags, imageOptimization, localBusinessSchema)
-  - localLinkBuilding (covering localDirectories, communityPartnerships, guestPosting, sponsorships)
-  - technicalLocalSEO (covering mobileFriendliness, siteSpeed, citationsNapConsistencyCheck)
-  - trackingReporting (covering googleAnalytics, googleSearchConsole, kpis as an array of KPI objects with text)
-  - conclusion
+  **Google My Business Optimization ('gmbOptimization'):**
+  - 'profileCompleteness': Stress 100% completion.
+  - 'napConsistency': Emphasize consistent Name, Address, Phone (NAP) everywhere.
+  - 'categories': Recommend accurate primary and additional GMB categories.
+  - 'servicesProducts': Suggest detailing {{{programsOffered}}} as services/products in GMB.
+  - 'photosVideos': Advise on regular uploads of high-quality, diverse media (campus, activities, staff).
+  - 'gmbPosts': Recommend types of posts (Events, Offers, What's New) and frequency, linking to website pages.
+  - 'qaSection': Suggest proactively adding common questions & answers, and monitoring for new ones.
+  - 'reviewsStrategy': Outline strategies for ethically encouraging reviews and responding to all reviews (positive & negative) using GMB review management tools.
+
+  **On-Page Local SEO ('onPageLocalSEO'):**
+  - 'localizedContent': Recommend creating location-specific pages (e.g., "Admissions in {{{location}}}", specific program pages for {{{location}}}) or content.
+  - 'titleTagsMetaDescriptions': Guide on optimizing with local keywords and compelling copy for CTR.
+  - 'headerTags': Explain using H1-H6 for structure and local keywords.
+  - 'imageOptimization': Advise on local keywords in image alt text, filenames, and geo-tagging where appropriate.
+  - 'localBusinessSchema': Strongly recommend implementing LocalBusiness schema markup (JSON-LD preferred). Provide a basic example structure if possible within the string, or refer to Google's documentation.
+
+  **Local Link Building ('localLinkBuilding'):**
+  - 'localDirectories': Suggest relevant local and niche directories (e.g., local chamber of commerce, education-specific directories).
+  - 'communityPartnerships': Recommend partnerships with local organizations, schools, or businesses for backlinks and mentions.
+  - 'guestPosting': Suggest guest posting on local blogs or relevant educational sites.
+  - 'sponsorships': Mention local event sponsorships for visibility and link opportunities.
+
+  **Technical Local SEO ('technicalLocalSEO'):**
+  - 'mobileFriendliness': Stress importance (mention Google's Mobile-Friendly Test).
+  - 'siteSpeed': Advise on optimizing (mention Google PageSpeed Insights).
+  - 'citationsNapConsistencyCheck': Reiterate checking NAP consistency across major citation sites (e.g., using tools like Moz Local or BrightLocal, or manual checks).
+
+  **Tracking & Reporting ('trackingReporting'):**
+  - 'googleAnalytics': How to track local traffic (e.g., geo-segmented reports) and conversions (e.g., form submissions from local users, calls from GMB).
+  - 'googleSearchConsole': How to monitor local search performance (queries, impressions, clicks by location via Performance report filters) and indexation.
+  - 'kpis': For the 'kpis' array, each item MUST be an object with "text" describing the KPI (e.g., "Increase in organic traffic from {{{location}}} by X%", "Improvement in local pack rankings for 5 primary keywords", "Increase in GMB direction requests by Y%"). Suggest 3-5 relevant KPIs.
+
+  **Executive Summary & Conclusion:**
+  - 'executiveSummary': Briefly summarize the core strategy and expected benefits for {{{institutionName}}}.
+  - 'conclusion': Provide a brief concluding statement encouraging action.
 
   Ensure the entire output is a single, valid JSON object matching the AI schema.
   `,
@@ -82,16 +111,15 @@ const generateLocalSEOStrategyFlow = ai.defineFlow(
     const {output: aiOutput} = await prompt(input);
     if (!aiOutput) {
       console.error("AI failed to generate valid structured output for Local SEO Strategy.");
-      // Return a structured error object matching the schema
       return {
-        executiveSummary: "Error: Failed to generate executive summary.",
-        keywordResearch: { primaryKeywords: [], secondaryKeywords: [], longTailKeywords: [], toolsMention: "N/A" },
+        executiveSummary: "Error: Failed to generate executive summary. Please refine input or try again.",
+        keywordResearch: { primaryKeywords: [], secondaryKeywords: [], longTailKeywords: [], toolsMention: "N/A (Generation Error)" },
         gmbOptimization: { profileCompleteness: "Error", napConsistency: "Error", categories: "Error", servicesProducts: "Error", photosVideos: "Error", gmbPosts: "Error", qaSection: "Error", reviewsStrategy: "Error" },
         onPageLocalSEO: { localizedContent: "Error", titleTagsMetaDescriptions: "Error", headerTags: "Error", imageOptimization: "Error", localBusinessSchema: "Error" },
         localLinkBuilding: { localDirectories: "Error", communityPartnerships: "Error", guestPosting: "Error", sponsorships: "Error" },
         technicalLocalSEO: { mobileFriendliness: "Error", siteSpeed: "Error", citationsNapConsistencyCheck: "Error" },
         trackingReporting: { googleAnalytics: "Error", googleSearchConsole: "Error", kpis: [] },
-        conclusion: "Error: Failed to generate conclusion.",
+        conclusion: "Error: Failed to generate conclusion. Please refine input or try again.",
       };
     }
 

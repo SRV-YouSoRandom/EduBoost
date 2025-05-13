@@ -28,7 +28,7 @@ export async function refineContentIdeas(
 
 // Define a new schema for the prompt's input, including the pre-serialized JSON string
 const RefineContentIdeasPromptInputInternalSchema = RefineContentIdeasInputSchema.extend({
-  currentIdeasJson: z.string().describe("The existing list of content ideas as a JSON string.")
+  currentIdeasJson: z.string().describe("The existing list of content ideas as a JSON string, including their text and status.")
 });
 
 const refinePrompt = ai.definePrompt({
@@ -45,7 +45,7 @@ Institution Context:
   Programs Offered: {{institutionContext.programsOffered}}
   Unique Selling Points: {{institutionContext.uniqueSellingPoints}}
 
-Existing Content Ideas (some may have expanded details, focus on refining the idea texts):
+Existing Content Ideas (JSON format, includes text and current status. Your output should only be new idea texts):
 \`\`\`json
 {{{currentIdeasJson}}}
 \`\`\`
@@ -53,15 +53,16 @@ Existing Content Ideas (some may have expanded details, focus on refining the id
 User's Refinement Request: "{{userPrompt}}"
 
 Based on the user's request, refine the existing list of content ideas.
-The goal is to *incorporate the user's feedback into the existing list*.
-- If the user asks to add new types of ideas (e.g., "more video ideas", "ideas for parents"), generate those and *add them to the list*.
-- If the user asks to focus on a specific program or theme, you can *modify existing relevant ideas or add new ones accordingly*.
-- If the user asks to remove certain types of ideas, *omit them from the new list*.
-- *Otherwise, try to preserve existing ideas that are still relevant.*
+Your goal is to *incorporate the user's feedback by generating new ideas based on the prompt and appending them to the list of existing ideas that are still relevant and not explicitly asked to be removed or modified*.
+- If the user asks to add specific types of ideas (e.g., "more video ideas", "ideas for parents"), generate those new ideas.
+- If the user asks to focus on a specific program or theme, generate new ideas reflecting this focus.
+- If the user asks to remove certain types of ideas, you should *not* include those types in any *newly generated* ideas. However, existing ideas of that type should generally be preserved unless the prompt explicitly states to remove them.
+- *Preserve existing ideas that are still relevant and not directly contradicted by the user's prompt.*
+- *Append any newly generated ideas to the end of the list of ideas you generate.*
+
 The output should be a new array of content idea strings *representing the complete, updated list of ideas*.
 Do not include IDs, statuses, or expanded details in your direct output.
-When adding new ideas based on the user's request, please ensure they are appended to the end of the list you generate.
-The final list of ideas should not exceed 10 items.
+The final list of ideas you provide MUST NOT exceed 10 items. If the combination of preserved and new ideas exceeds 10, prioritize the most relevant and impactful ones, trying to keep a mix of original and new ideas if possible.
 
 Return the refined list of content idea texts as an array of strings in the 'refinedContentIdeas' field.
   `,
@@ -74,11 +75,10 @@ const refineContentIdeasFlow = ai.defineFlow(
     outputSchema: GenerateContentIdeasOutputSchema,
   },
   async (input): Promise<import('@/ai/schemas/content-ideas-schemas').GenerateContentIdeasOutput> => {
-    // Pre-serialize currentIdeas.contentIdeas to a JSON string
-    let currentIdeasJsonString = "[]"; // Default to empty array string
+    let currentIdeasJsonString = "[]"; 
     if (input.currentIdeas && Array.isArray(input.currentIdeas.contentIdeas)) {
       currentIdeasJsonString = JSON.stringify(
-        input.currentIdeas.contentIdeas.map(idea => ({ text: idea.text, status: idea.status })), // Only include text and status in JSON passed to AI
+        input.currentIdeas.contentIdeas.map(idea => ({ text: idea.text, status: idea.status })),
         null,
         2
       );
@@ -92,27 +92,36 @@ const refineContentIdeasFlow = ai.defineFlow(
     const { output: aiRefinedOutput } = await refinePrompt(promptInput);
 
     if (aiRefinedOutput && aiRefinedOutput.refinedContentIdeas) {
+      const existingIdeasMap = new Map(
+        input.currentIdeas.contentIdeas.map(idea => [idea.text.toLowerCase(), idea])
+      );
+      
       let refinedIdeasWithStatus: ContentIdeaWithStatus[] = aiRefinedOutput.refinedContentIdeas.map((ideaText) => {
-        // Try to find a matching existing idea to preserve its ID, status, and details if relevant
-        const existingIdea = input.currentIdeas.contentIdeas.find(
-          (idea) => idea.text.toLowerCase() === ideaText.toLowerCase()
-        );
-        return {
-          id: existingIdea?.id || crypto.randomUUID(),
-          text: ideaText,
-          status: existingIdea?.status || ('pending' as Status),
-          expandedDetails: existingIdea?.expandedDetails, // Preserve details if text matches
-          isExpanding: false, // Reset expansion state
-        };
+        const matchedExistingIdea = existingIdeasMap.get(ideaText.toLowerCase());
+        if (matchedExistingIdea) {
+          return {
+            ...matchedExistingIdea, // Preserve ID, status, details if text matches
+            isExpanding: false, // Reset expansion state
+          };
+        } else {
+          // This is a new idea generated by the AI
+          return {
+            id: crypto.randomUUID(),
+            text: ideaText,
+            status: 'pending' as Status,
+            expandedDetails: undefined, 
+            isExpanding: false,
+          };
+        }
       });
+
       if (refinedIdeasWithStatus.length > 10) {
         refinedIdeasWithStatus = refinedIdeasWithStatus.slice(0, 10);
       }
       return { contentIdeas: refinedIdeasWithStatus };
     }
     
-    console.error("AI failed to generate valid refined content ideas. Returning original ideas.");
-    // If AI fails, return the original list, but ensure it's also capped if it somehow exceeds 10.
+    console.error("AI failed to generate valid refined content ideas. Returning original ideas, capped if necessary.");
     let originalIdeasCapped = input.currentIdeas;
     if (originalIdeasCapped.contentIdeas.length > 10) {
         originalIdeasCapped = {
@@ -123,4 +132,3 @@ const refineContentIdeasFlow = ai.defineFlow(
     return originalIdeasCapped; 
   }
 );
-

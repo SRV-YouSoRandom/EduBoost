@@ -40,7 +40,30 @@ const prompt = ai.definePrompt({
   name: 'generateContentIdeasPrompt',
   input: {schema: GenerateContentIdeasInputSchema},
   output: {schema: GenerateContentIdeasPromptOutputSchema}, // AI generates strings
-  prompt: `You are a creative content strategist specializing in the educational sector. Generate content ideas for {{institutionName}}, a {{institutionType}}, targeting {{targetAudience}}. The institution offers the following programs: {{programsOffered}}. Its unique selling points are: {{uniqueSellingPoints}}. Please provide a list of content ideas that will resonate with the target audience. Ensure each idea is a distinct string in the array. Aim for a list of up to 10 diverse ideas.`,
+  prompt: `You are a creative content strategist specializing in the educational sector.
+  Your goal is to generate a diverse and practical list of up to 10 content ideas for {{institutionName}}, a {{institutionType}}, targeting {{targetAudience}}.
+  Consider the institution's programs: {{programsOffered}} and its unique selling points: {{uniqueSellingPoints}}.
+
+  Instructions:
+  1.  **Diversity of Formats:** Suggest ideas that can be adapted for various formats like:
+      *   Blog posts (e.g., "Top 5 Benefits of Our [Program Name] Program")
+      *   Short videos (e.g., "A Day in the Life of a {{institutionType}} Student")
+      *   Infographics (e.g., "Career Paths After Graduating from {{institutionName}}")
+      *   Social media series (e.g., "Faculty Fridays: Meet Our Expert Instructors")
+      *   Webinar/Workshop topics (e.g., "Navigating the Admissions Process for {{targetAudience}}")
+      *   Podcast episodes (e.g., "Alumni Success Stories from {{institutionName}}")
+      *   Interactive quizzes (e.g., "Which of Our Programs is Right for You?")
+  2.  **Target Audience Relevance:** Ensure ideas directly address the needs, questions, and interests of the {{targetAudience}}.
+      *   For prospective students: Focus on program benefits, campus life, career outcomes.
+      *   For parents: Address concerns about safety, quality of education, student support.
+      *   For current students: Highlight resources, events, community building.
+  3.  **Highlight Strengths:** Incorporate {{uniqueSellingPoints}} and specific {{programsOffered}} into the ideas.
+  4.  **Actionable & Practical:** Ideas should be specific enough to be actionable. Avoid overly generic suggestions.
+  5.  **Engagement Focus:** Aim for ideas that encourage interaction, discussion, or sharing.
+  6.  **Output:** Provide a list of distinct content idea strings in the array. Aim for a list of up to 10 diverse ideas.
+      Example idea: "Create a 'Myth vs. Fact' short video series about [Specific Program/Aspect of Institution] relevant to {{targetAudience}}."
+      Example idea: "Develop an infographic showcasing the success rates and career placements of graduates from our {{programsOffered}}."
+  `,
 });
 
 const generateContentIdeasFlow = ai.defineFlow(
@@ -67,4 +90,3 @@ const generateContentIdeasFlow = ai.defineFlow(
     return { contentIdeas: [] }; // Fallback or error case
   }
 );
-

@@ -1,4 +1,3 @@
-
 // Use server directive is required for Genkit flows.
 'use server';
 /**
@@ -14,9 +13,9 @@ import type { Status } from '@/types/common';
 import {
   GenerateGMBOptimizationsInputSchema,
   GenerateGMBOptimizationsOutputSchema,
-  GMBKeywordSuggestionSchema, // Re-export GMBKeywordSuggestion type as well if needed
+  GMBKeywordSuggestionSchema, 
   GMBAIPromptOutputSchema,
-  AIKeywordSuggestionSchema, // If this is needed by other files, export from schema file too.
+  AIKeywordSuggestionSchema, 
 } from '@/ai/schemas/gmb-optimizer-schemas';
 
 export type { 
@@ -34,7 +33,7 @@ const prompt = ai.definePrompt({
   name: 'generateGMBOptimizationsPrompt',
   input: {schema: GenerateGMBOptimizationsInputSchema},
   output: {schema: GMBAIPromptOutputSchema}, // AI returns this structure
-  prompt: `You are an expert in Google My Business (GMB) optimization for educational institutions, leveraging all features of the GMB platform.
+  prompt: `You are an expert in Google My Business (GMB) optimization specifically for educational institutions, deeply familiar with all GMB features and Google's best practices.
 
   Based on the information provided:
   Institution Name: {{{institutionName}}}
@@ -44,35 +43,37 @@ const prompt = ai.definePrompt({
   Target Audience: {{{targetAudience}}}
   Unique Selling Points: {{{uniqueSellingPoints}}}
 
-  Provide your output as a JSON object adhering to the defined schema.
+  Provide your output as a single, valid JSON object adhering to the defined schema.
 
-  For 'keywordSuggestions', provide an array of objects. Each object must include:
-  - "text": The keyword suggestion (e.g., "Preschool {{{location}}}", "{{{institutionType}}} near me", "Best STEM programs {{{location}}}").
-  - "searchVolumeLast24h": An estimated search volume for this keyword in '{{{location}}}' over the last 24 hours. State if data is unavailable or an approximation (e.g., 'approx. 5-10', 'low', 'unavailable').
-  - "searchVolumeLast7d": An estimated search volume for this keyword in '{{{location}}}' over the last 7 days. State if data is unavailable or an approximation (e.g., 'approx. 50-70', 'medium', 'unavailable').
-  Include a mix of general and specific local keywords.
+  **1. Keyword Suggestions ('keywordSuggestions'):**
+  - Provide an array of 5-7 keyword objects. Each object must include:
+    - "text": The keyword suggestion (e.g., "Preschool {{{location}}}", "{{{institutionType}}} near me", "Best STEM programs {{{location}}}", "after-school care {{{location}}}").
+    - "searchVolumeLast24h": An *estimated* search volume (e.g., 'approx. 5-10', 'low', 'medium', 'high', 'unavailable'). If unavailable, state 'unavailable'.
+    - "searchVolumeLast7d": An *estimated* search volume (e.g., 'approx. 50-70', 'medium-high', 'high', 'unavailable'). If unavailable, state 'unavailable'.
+  - Include a mix of:
+    - **Broad local keywords:** (e.g., "{{{institutionType}}} {{{location}}}")
+    - **Program-specific keywords:** (e.g., "coding bootcamp {{{location}}}", "montessori preschool {{{location}}}").
+    - **Long-tail keywords:** (e.g., "best {{{institutionType}}} for special needs in {{{location}}}", "evening {{{programsOffered}}} classes in {{{location}}}")
+    - **Location + modifier keywords:** (e.g., "top-rated {{{institutionType}}} {{{location}}}", "affordable {{{programsOffered}}} {{{location}}}")
 
-  For 'descriptionSuggestions', craft an engaging GMB business description (max 750 characters). Use markdown for light formatting (bolding key phrases). Highlight unique selling points and programs.
-  Example for descriptionSuggestions:
-  "**{{{institutionName}}}** in {{{location}}} offers exceptional [Program Type] programs for {{{targetAudience}}}. We focus on [Unique Selling Point 1] and [Unique Selling Point 2]. Our curriculum includes: {{{programsOffered}}}. Visit us to discover a nurturing learning environment!"
+  **2. Description Suggestions ('descriptionSuggestions'):**
+  - Craft an engaging GMB business description (max 750 characters). Use markdown for light formatting (bolding key phrases).
+  - Highlight unique selling points, programs offered, and target audience.
+  - Include a clear call to action (e.g., "Visit our website to learn more!", "Schedule a tour today!").
+  - Example: "**{{{institutionName}}}** in **{{{location}}}** offers exceptional [Program Type, e.g., Early Childhood Education] programs for {{{targetAudience}}}. We focus on [Unique Selling Point 1, e.g., hands-on learning] and [Unique Selling Point 2, e.g., small class sizes]. Our curriculum includes: {{{programsOffered}}}. Discover a nurturing and stimulating learning environment. Schedule your visit today!"
 
-  For 'optimizationTips', provide a markdown list of actionable tips covering these GMB features:
-  - **GMB Posts:** Suggest types of posts (events, offers, news) and frequency.
-  - **Q&A Feature:** Advise on populating common questions and promptly answering new ones.
-  - **Photos & Videos:** Recommend types of visuals (campus, classrooms, activities, staff) and regular uploads.
-  - **Services/Products:** How to list {{{programsOffered}}} effectively.
-  - **Reviews Management:** Strategy for encouraging and responding to reviews.
-  - **Attributes:** Suggest relevant GMB attributes to select (e.g., accessibility, amenities).
-  - **Messaging:** Importance of enabling and responding to GMB messages.
-  Example for optimizationTips:
-  \`\`\`markdown
-  - **GMB Posts:** Share weekly updates about student achievements or upcoming open house events. Use compelling images.
-  - **Q&A:** Add 5-10 common questions parents ask about admissions, curriculum, and facilities.
-  - **Photos:** Upload at least 10 high-quality photos showcasing your campus, classrooms, and student activities this month. Add a virtual tour if possible.
-  - **Services:** List each main program offered (e.g., "Preschool Program", "Kindergarten Program") with detailed descriptions and even pricing if applicable.
-  - **Reviews:** Actively request reviews from happy parents and respond to all reviews (positive and negative) within 24-48 hours.
-  \`\`\`
-  Ensure all outputs adhere to the formatting requested in their descriptions.
+  **3. Optimization Tips ('optimizationTips'):**
+  - Provide a comprehensive markdown list of actionable tips covering these GMB features with specific examples relevant to the institution:
+    - **GMB Posts:** Suggest types of posts (Events, Offers, What's New, COVID-19 updates if relevant) and optimal frequency. Example: "Post weekly 'Student Spotlight' or 'Teacher Tuesday' features. Announce open house events 2 weeks in advance using an Event post."
+    - **Q&A Feature:** Advise on pre-populating with 5-7 common questions (and answers) and promptly answering new user questions. Example: "Pre-fill Q&A with: 'What are your admission requirements?', 'What are your hours?', 'Do you offer financial aid?'"
+    - **Photos & Videos:** Recommend types of visuals (campus tour, classroom activities, student projects, staff introductions, virtual tour if possible) and regular uploads (e.g., 5 new photos monthly). Emphasize high-quality, well-lit images.
+    - **Services/Products:** Detail how to list {{{programsOffered}}} effectively, including descriptions and potentially calls to action for each service. Example: "List 'Preschool Program', 'Kindergarten Program', 'After-School Tutoring' as distinct services. For each, describe curriculum highlights and age suitability."
+    - **Reviews Management:** Outline a strategy for ethically encouraging reviews and responding to ALL reviews (positive and negative) professionally and promptly (within 24-48 hours), incorporating keywords where natural.
+    - **Attributes:** Suggest highly relevant GMB attributes to select (e.g., 'Online appointments', 'Onsite services', 'Wheelchair accessible entrance', 'Free Wi-Fi', 'Identifies as women-led').
+    - **Messaging:** Stress the importance of enabling GMB messaging and responding to inquiries quickly (within a few hours if possible).
+    - **NAP Consistency:** Briefly reiterate the importance of consistent Name, Address, and Phone number across all online listings.
+
+  Ensure all outputs strictly adhere to the formatting requested in their descriptions.
   The entire output must be a single, valid JSON object.
   `,
 });
@@ -96,20 +97,20 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
       
       return { 
         keywordSuggestions: mappedKeywordSuggestions,
-        keywordSuggestionsSectionStatus: 'pending', // Default status for the section
+        keywordSuggestionsSectionStatus: 'pending', 
         descriptionSuggestions: aiOutput.descriptionSuggestions,
-        descriptionSuggestionsStatus: 'pending', // Default status
+        descriptionSuggestionsStatus: 'pending', 
         optimizationTips: aiOutput.optimizationTips,
-        optimizationTipsStatus: 'pending', // Default status
+        optimizationTipsStatus: 'pending', 
       };
     }
     // Fallback error structure matching the output schema
     return { 
       keywordSuggestions: [],
       keywordSuggestionsSectionStatus: 'pending',
-      descriptionSuggestions: "Error: Could not generate description suggestions.",
+      descriptionSuggestions: "Error: Could not generate description suggestions. Please try again or refine your input.",
       descriptionSuggestionsStatus: 'pending',
-      optimizationTips: "- Error: Could not generate optimization tips.",
+      optimizationTips: "- Error: Could not generate optimization tips. Please try again or refine your input.",
       optimizationTipsStatus: 'pending',
     };
   }

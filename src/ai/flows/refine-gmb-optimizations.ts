@@ -27,8 +27,6 @@ export async function refineGMBOptimizations(
   return refineGMBOptimizationsFlow(input);
 }
 
-// Define a new schema for the prompt's input, including the pre-serialized JSON string
-// For currentStrategyJson, pass only the AI-relevant parts (text, search volumes for keywords, and the markdown strings)
 const CurrentStrategyForPromptSchema = z.object({
     keywordSuggestions: z.array(AIKeywordSuggestionSchema).describe('The current keyword suggestions, only text and search volumes.'),
     descriptionSuggestions: z.string().describe('Current GMB description markdown.'),
@@ -36,7 +34,7 @@ const CurrentStrategyForPromptSchema = z.object({
 });
 
 const RefineGMBOptimizationsPromptInputInternalSchema = RefineGMBOptimizationsInputSchema.extend({
-  currentStrategyJson: z.string().describe("The existing GMB optimization strategy's relevant parts as a JSON string.")
+  currentStrategyJson: z.string().describe("The existing GMB optimization strategy's relevant parts (keywords without IDs/status, description, tips) as a JSON string.")
 });
 
 
@@ -45,7 +43,7 @@ const refinePrompt = ai.definePrompt({
   input: { schema: RefineGMBOptimizationsPromptInputInternalSchema }, 
   output: { schema: GMBAIPromptOutputSchema }, 
   prompt: `You are an expert in Google My Business (GMB) optimization.
-You are given an existing GMB optimization strategy and a user prompt asking for modifications.
+You are given an existing GMB optimization strategy and a user prompt asking for modifications. Your task is to intelligently incorporate the user's feedback.
 
 Institution Context:
   Name: {{institutionContext.institutionName}}
@@ -55,19 +53,25 @@ Institution Context:
   Target Audience: {{institutionContext.targetAudience}}
   Unique Selling Points: {{institutionContext.uniqueSellingPoints}}
 
-Existing GMB Strategy (relevant parts):
+Existing GMB Strategy (relevant parts for AI processing - keywords are simplified):
 \`\`\`json
 {{{currentStrategyJson}}}
 \`\`\`
 
 User's Refinement Request: "{{userPrompt}}"
 
-Based on the user's request, refine the existing strategy. Your goal is to *incorporate the user's feedback into the respective sections (keywordSuggestions, descriptionSuggestions, optimizationTips)*.
-- For 'keywordSuggestions': If the user asks to add, remove, or analyze keywords, update the array. *Preserve existing keywords not explicitly targeted for removal or modification.* For new keywords, provide estimated search volumes. *When adding new keywords, append them to the end of the keyword list you generate.* *Return the complete, updated list of keyword objects.*
-- For 'descriptionSuggestions' and 'optimizationTips': Modify these markdown strings based on the feedback. *Aim to enhance or correct them rather than completely rewriting, unless necessary.*
+Based on the user's request, refine the existing strategy. Your goal is to *intelligently incorporate the user's feedback into the respective sections (keywordSuggestions, descriptionSuggestions, optimizationTips)*.
+- **Keyword Suggestions ('keywordSuggestions'):**
+    - If the user asks to add keywords, generate those new keywords along with *estimated* search volumes ('approx. X-Y', 'low', 'medium', 'high', 'unavailable').
+    - *Preserve existing keywords from 'currentStrategyJson.keywordSuggestions' unless the user's prompt clearly implies they should be removed or modified.*
+    - *Append any newly generated keywords to the end of the keyword list you generate.*
+    - The final 'keywordSuggestions' array should contain a mix of preserved and newly generated keywords, each as an object with "text", "searchVolumeLast24h", and "searchVolumeLast7d".
+- **Description Suggestions ('descriptionSuggestions') and Optimization Tips ('optimizationTips'):**
+    - Modify these markdown strings based on the user's feedback.
+    - *Aim to enhance or correct the existing text, integrating the user's request, rather than completely rewriting, unless the user explicitly asks for a full rewrite of a section or the current text is very short/irrelevant.*
+    - If the user asks to add specific tips or points to the description, integrate them naturally into the existing markdown structure.
 
-Ensure the entire output is a single, valid JSON object conforming to the AI output schema (GMBAIPromptOutputSchema).
-For 'keywordSuggestions', each item must be an object with "text", "searchVolumeLast24h", and "searchVolumeLast7d".
+Ensure the entire output is a single, valid JSON object conforming to the GMBAIPromptOutputSchema (which includes 'keywordSuggestions' as an array of AIKeywordSuggestionSchema, 'descriptionSuggestions' as a string, and 'optimizationTips' as a string).
 Return the complete, updated GMB strategy sections as a JSON object.
   `,
 });
@@ -79,7 +83,6 @@ const refineGMBOptimizationsFlow = ai.defineFlow(
     outputSchema: GenerateGMBOptimizationsOutputSchema,
   },
   async (input): Promise<import('@/ai/schemas/gmb-optimizer-schemas').GenerateGMBOptimizationsOutput> => {
-    // Prepare a simplified version of the current strategy for the AI prompt
     const simplifiedCurrentStrategy = {
       keywordSuggestions: input.currentStrategy.keywordSuggestions.map(kw => ({
         text: kw.text,
@@ -100,20 +103,32 @@ const refineGMBOptimizationsFlow = ai.defineFlow(
 
     if (!aiRefinedOutput || !aiRefinedOutput.keywordSuggestions || !aiRefinedOutput.descriptionSuggestions || !aiRefinedOutput.optimizationTips) {
       console.error("AI failed to generate valid structured output for GMB refinement. Returning original strategy.");
-      return input.currentStrategy;
+      return input.currentStrategy; // Return original if AI fails
     }
 
+    const existingKeywordsMap = new Map(
+      input.currentStrategy.keywordSuggestions.map(kw => [kw.text.toLowerCase(), kw])
+    );
+
     const mappedKeywordSuggestions: GMBKeywordSuggestion[] = aiRefinedOutput.keywordSuggestions.map(aiKw => {
-        const existingKw = input.currentStrategy.keywordSuggestions.find(
-          (currentKw) => currentKw.text.toLowerCase() === aiKw.text.toLowerCase()
-        );
-        return {
-          id: existingKw?.id || crypto.randomUUID(),
-          text: aiKw.text,
-          status: existingKw?.status || ('pending'as Status), 
-          searchVolumeLast24h: aiKw.searchVolumeLast24h,
-          searchVolumeLast7d: aiKw.searchVolumeLast7d,
-        };
+        const matchedExistingKw = existingKeywordsMap.get(aiKw.text.toLowerCase());
+        if (matchedExistingKw) {
+          // If AI returns a keyword that existed, preserve its ID and status
+          return {
+            ...matchedExistingKw, // Preserves ID, status
+            searchVolumeLast24h: aiKw.searchVolumeLast24h, // Update search volumes if AI provided them
+            searchVolumeLast7d: aiKw.searchVolumeLast7d,
+          };
+        } else {
+          // This is a new keyword generated by the AI or a significantly rephrased one
+          return {
+            id: crypto.randomUUID(),
+            text: aiKw.text,
+            status: 'pending' as Status, 
+            searchVolumeLast24h: aiKw.searchVolumeLast24h,
+            searchVolumeLast7d: aiKw.searchVolumeLast7d,
+          };
+        }
     });
 
     return {
@@ -126,4 +141,3 @@ const refineGMBOptimizationsFlow = ai.defineFlow(
     };
   }
 );
-
