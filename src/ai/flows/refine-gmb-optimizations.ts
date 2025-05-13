@@ -15,6 +15,7 @@ import {
   GenerateGMBOptimizationsInputSchema, // For institutionContext
   GMBAIPromptOutputSchema, // AI will output this structure, which then gets mapped
   GMBKeywordSuggestion,
+  AIKeywordSuggestionSchema, // Used by GMBAIPromptOutputSchema
 } from '@/ai/schemas/gmb-optimizer-schemas';
 import { z } from 'zod';
 
@@ -27,15 +28,22 @@ export async function refineGMBOptimizations(
 }
 
 // Define a new schema for the prompt's input, including the pre-serialized JSON string
+// For currentStrategyJson, pass only the AI-relevant parts (text, search volumes for keywords, and the markdown strings)
+const CurrentStrategyForPromptSchema = z.object({
+    keywordSuggestions: z.array(AIKeywordSuggestionSchema).describe('The current keyword suggestions, only text and search volumes.'),
+    descriptionSuggestions: z.string().describe('Current GMB description markdown.'),
+    optimizationTips: z.string().describe('Current GMB optimization tips markdown.')
+});
+
 const RefineGMBOptimizationsPromptInputInternalSchema = RefineGMBOptimizationsInputSchema.extend({
-  currentStrategyJson: z.string().describe("The existing GMB optimization strategy as a JSON string.")
+  currentStrategyJson: z.string().describe("The existing GMB optimization strategy's relevant parts as a JSON string.")
 });
 
 
 const refinePrompt = ai.definePrompt({
   name: 'refineGMBOptimizationsPrompt',
-  input: { schema: RefineGMBOptimizationsPromptInputInternalSchema }, // Use the internal schema
-  output: { schema: GMBAIPromptOutputSchema }, // AI returns the "raw" structure, mapping happens in flow
+  input: { schema: RefineGMBOptimizationsPromptInputInternalSchema }, 
+  output: { schema: GMBAIPromptOutputSchema }, 
   prompt: `You are an expert in Google My Business (GMB) optimization.
 You are given an existing GMB optimization strategy and a user prompt asking for modifications.
 
@@ -47,34 +55,41 @@ Institution Context:
   Target Audience: {{institutionContext.targetAudience}}
   Unique Selling Points: {{institutionContext.uniqueSellingPoints}}
 
-Existing GMB Strategy:
+Existing GMB Strategy (relevant parts):
 \`\`\`json
 {{{currentStrategyJson}}}
 \`\`\`
 
 User's Refinement Request: "{{userPrompt}}"
 
-Based on the user's request, refine the existing strategy.
-- If the user asks to add, remove, or analyze keywords, update the 'keywordSuggestions' array. Preserve existing keywords not mentioned in the prompt. For new keywords, provide estimated search volumes if possible (e.g., "approx 10 searches", "low", "unavailable").
-- If the request concerns 'descriptionSuggestions' or 'optimizationTips', modify those markdown strings.
-- Ensure the entire output is a single, valid JSON object conforming to the AI output schema (GMBAIPromptOutputSchema).
-- For 'keywordSuggestions', each item must be an object with "text", "searchVolumeLast24h", and "searchVolumeLast7d".
-- Try to incorporate the user's feedback directly into the relevant sections.
+Based on the user's request, refine the existing strategy. Your goal is to *incorporate the user's feedback into the respective sections (keywordSuggestions, descriptionSuggestions, optimizationTips)*.
+- For 'keywordSuggestions': If the user asks to add, remove, or analyze keywords, update the array. *Preserve existing keywords not explicitly targeted for removal or modification.* For new keywords, provide estimated search volumes. *Return the complete, updated list of keyword objects.*
+- For 'descriptionSuggestions' and 'optimizationTips': Modify these markdown strings based on the feedback. *Aim to enhance or correct them rather than completely rewriting, unless necessary.*
 
+Ensure the entire output is a single, valid JSON object conforming to the AI output schema (GMBAIPromptOutputSchema).
+For 'keywordSuggestions', each item must be an object with "text", "searchVolumeLast24h", and "searchVolumeLast7d".
 Return the complete, updated GMB strategy sections as a JSON object.
   `,
-  // Removed helpers block as jsonEncode is no longer used
 });
 
 const refineGMBOptimizationsFlow = ai.defineFlow(
   {
     name: 'refineGMBOptimizationsFlow',
-    inputSchema: RefineGMBOptimizationsInputSchema, // External input schema remains the same
+    inputSchema: RefineGMBOptimizationsInputSchema, 
     outputSchema: GenerateGMBOptimizationsOutputSchema,
   },
   async (input): Promise<import('@/ai/schemas/gmb-optimizer-schemas').GenerateGMBOptimizationsOutput> => {
-    // Pre-serialize currentStrategy to a JSON string
-    const currentStrategyJsonString = JSON.stringify(input.currentStrategy, null, 2);
+    // Prepare a simplified version of the current strategy for the AI prompt
+    const simplifiedCurrentStrategy = {
+      keywordSuggestions: input.currentStrategy.keywordSuggestions.map(kw => ({
+        text: kw.text,
+        searchVolumeLast24h: kw.searchVolumeLast24h,
+        searchVolumeLast7d: kw.searchVolumeLast7d,
+      })),
+      descriptionSuggestions: input.currentStrategy.descriptionSuggestions,
+      optimizationTips: input.currentStrategy.optimizationTips,
+    };
+    const currentStrategyJsonString = JSON.stringify(simplifiedCurrentStrategy, null, 2);
     
     const promptInput = {
       ...input,
@@ -84,23 +99,22 @@ const refineGMBOptimizationsFlow = ai.defineFlow(
     const { output: aiRefinedOutput } = await refinePrompt(promptInput);
 
     if (!aiRefinedOutput || !aiRefinedOutput.keywordSuggestions || !aiRefinedOutput.descriptionSuggestions || !aiRefinedOutput.optimizationTips) {
-      console.error("AI failed to generate valid structured output for GMB refinement.");
-      // Return the original strategy or a structured error
-      // For now, returning a modified version of original with error messages.
-      return {
-        ...input.currentStrategy, // Spread original strategy
-        descriptionSuggestions: "Error: Could not refine description. Original preserved.",
-        optimizationTips: "Error: Could not refine tips. Original preserved.",
-      };
+      console.error("AI failed to generate valid structured output for GMB refinement. Returning original strategy.");
+      return input.currentStrategy;
     }
 
-    const mappedKeywordSuggestions: GMBKeywordSuggestion[] = aiRefinedOutput.keywordSuggestions.map(kw => ({
-      id: crypto.randomUUID(),
-      text: kw.text,
-      status: 'pending' as Status, // Reset status for refined/new keywords
-      searchVolumeLast24h: kw.searchVolumeLast24h,
-      searchVolumeLast7d: kw.searchVolumeLast7d,
-    }));
+    const mappedKeywordSuggestions: GMBKeywordSuggestion[] = aiRefinedOutput.keywordSuggestions.map(aiKw => {
+        const existingKw = input.currentStrategy.keywordSuggestions.find(
+          (currentKw) => currentKw.text.toLowerCase() === aiKw.text.toLowerCase()
+        );
+        return {
+          id: existingKw?.id || crypto.randomUUID(),
+          text: aiKw.text,
+          status: existingKw?.status || ('pending'as Status), 
+          searchVolumeLast24h: aiKw.searchVolumeLast24h,
+          searchVolumeLast7d: aiKw.searchVolumeLast7d,
+        };
+    });
 
     return {
       keywordSuggestions: mappedKeywordSuggestions,

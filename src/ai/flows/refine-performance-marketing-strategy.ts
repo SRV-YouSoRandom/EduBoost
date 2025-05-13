@@ -51,10 +51,12 @@ Existing Performance Marketing Strategy Document (Markdown):
 User's Refinement Request: "{{userPrompt}}"
 
 Based on the user's request, refine the existing markdown document.
-- Carefully consider the user's prompt and update the relevant sections of the document.
-- For example, if the user asks to "focus more on YouTube Ads", expand that section with more specific recommendations. If they ask to "reduce budget for Display Ads", adjust the budget allocation section and potentially elaborate on the reasoning.
-- Ensure the entire output for 'marketingStrategyDocument' is a single, valid, and comprehensive markdown string, maintaining the overall structure and incorporating the refinements.
-- Use clear headings, bullet points, and bold text for readability as in the original.
+Your goal is to *incorporate the user's feedback into the document, modifying relevant sections as needed*.
+- For example, if the user asks to "focus more on YouTube Ads", *expand that section with more specific recommendations*.
+- If they ask to "reduce budget for Display Ads", *adjust the budget allocation section and potentially elaborate on the reasoning*.
+- *Aim to enhance or correct the existing document, not replace it entirely, unless the user explicitly asks for a rewrite of a specific section.*
+Ensure the entire output for 'marketingStrategyDocument' is a single, valid, and comprehensive markdown string, maintaining the overall structure and incorporating the refinements.
+Use clear headings, bullet points, and bold text for readability as in the original.
 
 Return the complete, updated strategy as a markdown string within the 'marketingStrategyDocument' field.
   `,
@@ -72,12 +74,13 @@ const refinePerformanceMarketingStrategyFlow = ai.defineFlow(
     if (aiRefinedOutput && aiRefinedOutput.marketingStrategyDocument) {
       return {
         marketingStrategyDocument: aiRefinedOutput.marketingStrategyDocument,
-        documentStatus: input.currentStrategy.documentStatus, // Preserve original status or reset to 'pending'
+        documentStatus: input.currentStrategy.documentStatus, // Preserve original status
       };
     }
-    // Fallback: return original strategy with an error message prepended, or just original
-    return {
-      marketingStrategyDocument: `# Error Refining Strategy\n\nAn error occurred during refinement. Original document preserved below:\n\n${input.currentStrategy.marketingStrategyDocument}`,
+    
+    console.error("AI failed to generate refined performance marketing strategy. Returning original.");
+    return { // Fallback: return original strategy
+      marketingStrategyDocument: input.currentStrategy.marketingStrategyDocument,
       documentStatus: input.currentStrategy.documentStatus,
     };
   }

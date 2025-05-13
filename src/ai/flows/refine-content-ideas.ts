@@ -52,16 +52,17 @@ Existing Content Ideas (some may have expanded details, focus on refining the id
 
 User's Refinement Request: "{{userPrompt}}"
 
-Based on a user's request, refine the existing list of content ideas.
-- If the user asks to add new types of ideas (e.g., "more video ideas", "ideas for parents"), generate those.
-- If the user asks to focus on a specific program or theme, tailor existing ideas or add new ones.
-- If the user asks to remove certain types of ideas, omit them from the new list.
-- Try to preserve the essence of existing ideas that are still relevant unless the prompt suggests otherwise.
-- The output should be a new array of content idea strings. Do not include IDs, statuses, or expanded details in your direct output.
+Based on the user's request, refine the existing list of content ideas.
+The goal is to *incorporate the user's feedback into the existing list*.
+- If the user asks to add new types of ideas (e.g., "more video ideas", "ideas for parents"), generate those and *add them to the list*.
+- If the user asks to focus on a specific program or theme, you can *modify existing relevant ideas or add new ones accordingly*.
+- If the user asks to remove certain types of ideas, *omit them from the new list*.
+- *Otherwise, try to preserve existing ideas that are still relevant.*
+The output should be a new array of content idea strings *representing the complete, updated list of ideas*.
+Do not include IDs, statuses, or expanded details in your direct output.
 
 Return the refined list of content idea texts as an array of strings in the 'refinedContentIdeas' field.
   `,
-  // Removed helpers block as jsonEncode is no longer used in the template
 });
 
 const refineContentIdeasFlow = ai.defineFlow(
@@ -75,7 +76,7 @@ const refineContentIdeasFlow = ai.defineFlow(
     let currentIdeasJsonString = "[]"; // Default to empty array string
     if (input.currentIdeas && Array.isArray(input.currentIdeas.contentIdeas)) {
       currentIdeasJsonString = JSON.stringify(
-        input.currentIdeas.contentIdeas.map(idea => ({ text: idea.text, status: idea.status })),
+        input.currentIdeas.contentIdeas.map(idea => ({ text: idea.text, status: idea.status })), // Only include text and status in JSON passed to AI
         null,
         2
       );
@@ -105,9 +106,7 @@ const refineContentIdeasFlow = ai.defineFlow(
       return { contentIdeas: refinedIdeasWithStatus };
     }
     
-    // Fallback: return original ideas or an error message
-    // For now, returning original ideas if refinement fails.
-    console.error("AI failed to generate valid refined content ideas.");
+    console.error("AI failed to generate valid refined content ideas. Returning original ideas.");
     return input.currentIdeas; 
   }
 );

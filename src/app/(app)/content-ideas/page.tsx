@@ -21,11 +21,22 @@ import MarkdownDisplay from "@/components/common/markdown-display";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Lightbulb, Sparkles, ChevronsUpDown, Wand2 } from "lucide-react";
+import { Loader2, Lightbulb, Sparkles, ChevronsUpDown, Wand2, Trash2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
-import { cn } from "@/lib/utils";
+import { cn, truncateText, deepClone } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 import type { GenerateContentIdeasInput, GenerateContentIdeasOutput, ContentIdeaWithStatus } from '@/ai/schemas/content-ideas-schemas';
 import { generateContentIdeas } from '@/ai/flows/generate-content-ideas';
@@ -50,6 +61,7 @@ export default function ContentIdeasPage() {
   const [openCollapsibles, setOpenCollapsibles] = useState<Record<string, boolean>>({});
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [isPageLoading, setIsPageLoading] = useState(true);
+  const [ideaToDelete, setIdeaToDelete] = useState<ContentIdeaWithStatus | null>(null);
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -116,7 +128,8 @@ export default function ContentIdeasPage() {
       console.error("Error saving content ideas:", error, "Full details:", errorDetails);
       toast({ title: "Error Saving Ideas", description: `Could not save content ideas. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else {
-      toast({ title: "Ideas Saved", description: "Your content ideas have been saved." });
+      // toast({ title: "Ideas Saved", description: "Your content ideas have been saved." });
+      // Avoid toast on every minor save like status change or delete, only for major generations/refinements
     }
   };
 
@@ -160,8 +173,10 @@ export default function ContentIdeasPage() {
         programsOffered: activeInstitution.programsOffered,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       };
+      // Pass a deep clone of currentIdeas to avoid issues with direct state mutation if AI flow or other logic modifies it.
+      const currentIdeasClone = deepClone(result);
       const refineInput: RefineContentIdeasInput = {
-        currentIdeas: result,
+        currentIdeas: currentIdeasClone,
         userPrompt: refinementPrompt,
         institutionContext: institutionContext,
       };
@@ -191,6 +206,20 @@ export default function ContentIdeasPage() {
     setResult(updatedResult);
     await saveIdeasToSupabase(updatedResult);
   };
+
+  const handleDeleteIdea = async () => {
+    if (!ideaToDelete || !result || !activeInstitution) return;
+
+    const updatedIdeasArray = result.contentIdeas.filter(idea => idea.id !== ideaToDelete.id);
+    const updatedResult = { ...result, contentIdeas: updatedIdeasArray };
+    
+    setResult(updatedResult); // Optimistic update
+    await saveIdeasToSupabase(updatedResult); // Persist change
+    
+    toast({ title: "Idea Deleted", description: "The content idea has been removed." });
+    setIdeaToDelete(null); // Close dialog
+  };
+
 
   const handleExpandIdea = async (ideaId: string, isRegeneration: boolean = false) => {
     const ideaToExpand = result?.contentIdeas.find(idea => idea.id === ideaId);
@@ -227,7 +256,7 @@ export default function ContentIdeasPage() {
       
       const finalResult = {
         ...result, 
-        contentIdeas: (result?.contentIdeas || []).map(idea => 
+        contentIdeas: (newResultProcessing?.contentIdeas || []).map(idea => 
           idea.id === ideaId 
             ? { ...idea, expandedDetails: expansionResult.expandedDetails, isExpanding: false } 
             : idea
@@ -250,7 +279,7 @@ export default function ContentIdeasPage() {
       });
        const errorRevertedResult = {
          ...result, 
-        contentIdeas: (result?.contentIdeas || []).map(idea =>
+        contentIdeas: (newResultProcessing?.contentIdeas || []).map(idea =>
           idea.id === ideaId ? { ...idea, isExpanding: false } : idea
         ),
       };
@@ -271,15 +300,6 @@ export default function ContentIdeasPage() {
 
   const toggleCollapsible = (id: string) => {
     setOpenCollapsibles(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // Function to truncate text to a certain number of words
-  const truncateText = (text: string, wordLimit: number): string => {
-    const words = text.split(' ');
-    if (words.length > wordLimit) {
-      return words.slice(0, wordLimit).join(' ') + '...';
-    }
-    return text;
   };
 
 
@@ -331,7 +351,7 @@ export default function ContentIdeasPage() {
                             variant="ghost" 
                             className={cn(
                               "flex-1 justify-start text-left px-0 text-base items-center min-w-0",
-                               "md:w-2/5 md:max-w-[40%]" 
+                               "md:w-[40%] md:max-w-[40%]" 
                             )}
                             title={idea.text} // Show full text on hover
                           >
@@ -347,6 +367,13 @@ export default function ContentIdeasPage() {
                             onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
                             size="sm"
                           />
+                          {idea.status === 'rejected' && (
+                            <AlertDialogTrigger asChild>
+                              <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => setIdeaToDelete(idea)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                          )}
                         </div>
                       </div>
                       <CollapsibleContent className="mt-4 pt-4 border-t space-y-3">
@@ -465,7 +492,25 @@ export default function ContentIdeasPage() {
           <p className="mt-4 text-lg text-muted-foreground">Brainstorming content ideas for you...</p>
         </div>
       )}
+
+      {ideaToDelete && (
+        <AlertDialog open={!!ideaToDelete} onOpenChange={(open) => !open && setIdeaToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the content idea: "{truncateText(ideaToDelete.text, 10)}".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setIdeaToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteIdea}>
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
-

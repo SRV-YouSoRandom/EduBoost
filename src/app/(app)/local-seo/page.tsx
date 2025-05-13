@@ -21,13 +21,24 @@ import StatusControl from "@/components/common/StatusControl";
 import type { Status, ItemWithIdAndStatus } from "@/types/common"; 
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText, TrendingUp, Clock, Wand2 } from "lucide-react";
+import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText, TrendingUp, Clock, Wand2, Trash2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, Legend } from 'recharts';
-import { cn } from "@/lib/utils";
+import { cn, truncateText, deepClone } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
-import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput, KeywordItemWithStatus } from '@/ai/flows/generate-local-seo-strategy';
+import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput, KeywordItemWithStatus, AIKeywordResearch, AITrackingReporting } from '@/ai/schemas/local-seo-schemas'; // Added AI types
 import { generateLocalSEOStrategy } from '@/ai/flows/generate-local-seo-strategy';
 import { refineLocalSEOStrategy, RefineLocalSEOStrategyInput } from '@/ai/flows/refine-local-seo-strategy';
 
@@ -40,118 +51,63 @@ const formSchema = z.object({
   websiteUrl: z.string().url("Please enter a valid URL."),
 });
 
+interface SeoListItemProps {
+  item: KeywordItemWithStatus;
+  onStatusChange: (itemId: string, newStatus: Status) => void;
+  onSetItemToDelete: (item: KeywordItemWithStatus) => void;
+}
 
-const ListWithStatusDisplay: React.FC<{ title: string; items: (KeywordItemWithStatus | ItemWithIdAndStatus)[]; onStatusChange: (itemId: string, newStatus: Status) => void; listType?: 'keywordResearch' | 'kpis' }> = ({ title, items, onStatusChange }) => {
-  if (!items || items.length === 0) return <p className="text-muted-foreground">No {title.toLowerCase()} available.</p>;
-  
+const SeoListItem: React.FC<SeoListItemProps> = ({ item, onStatusChange, onSetItemToDelete }) => {
   const getStatusSpecificStyling = (status: Status) => {
     switch (status) {
-      case 'done':
-        return 'line-through text-muted-foreground opacity-70';
-      case 'rejected':
-        return 'text-destructive opacity-70';
-      default:
-        return '';
+      case 'done': return 'line-through text-muted-foreground opacity-70';
+      case 'rejected': return 'text-destructive opacity-70';
+      default: return '';
     }
   };
 
   return (
-    <div className="space-y-3">
-      <h4 className="font-semibold text-md">{title}</h4>
-      <ul className="space-y-3">
-        {items.map((item) => (
-          <li 
-            key={item.id}
-            className={cn(
-              "flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 rounded-md border bg-card gap-3",
-              getStatusSpecificStyling(item.status)
-            )}
-          >
-            <div className="flex-1 space-y-1">
-              <span className="block">{item.text}</span>
-              {('searchVolumeLast24h' in item && item.searchVolumeLast24h) && (
-                <p className="text-xs text-muted-foreground flex items-center">
-                  <Clock className="mr-1 h-3 w-3" /> 24h: {item.searchVolumeLast24h}
-                </p>
-              )}
-              {('searchVolumeLast7d' in item && item.searchVolumeLast7d) && (
-                <p className="text-xs text-muted-foreground flex items-center">
-                  <TrendingUp className="mr-1 h-3 w-3" /> 7d: {item.searchVolumeLast7d}
-                </p>
-              )}
-            </div>
-            <StatusControl
-              currentStatus={item.status}
-              onStatusChange={(newStatus) => onStatusChange(item.id, newStatus)}
-              size="sm"
-            />
-          </li>
-        ))}
-      </ul>
-    </div>
+    <li 
+      className={cn(
+        "flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 rounded-md border bg-card gap-3",
+        getStatusSpecificStyling(item.status)
+      )}
+    >
+      <div className="flex-1 space-y-1">
+        <span className="block">{item.text}</span>
+        {item.searchVolumeLast24h && (
+          <p className="text-xs text-muted-foreground flex items-center">
+            <Clock className="mr-1 h-3 w-3" /> 24h: {item.searchVolumeLast24h}
+          </p>
+        )}
+        {item.searchVolumeLast7d && (
+          <p className="text-xs text-muted-foreground flex items-center">
+            <TrendingUp className="mr-1 h-3 w-3" /> 7d: {item.searchVolumeLast7d}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <StatusControl
+          currentStatus={item.status}
+          onStatusChange={(newStatus) => onStatusChange(item.id, newStatus)}
+          size="sm"
+        />
+        {item.status === 'rejected' && (
+           <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => onSetItemToDelete(item)}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </AlertDialogTrigger>
+        )}
+      </div>
+    </li>
   );
 };
 
 
-const SectionDisplay: React.FC<{ title: string; content?: string | Record<string, any>; icon?: React.ElementType; chartData?: any[]; chartType?: 'bar'; onItemsStatusChange?: (listType: 'keywordResearch' | 'kpis', itemId: string, newStatus: Status) => void; }> = 
-  ({ title, content, icon: Icon, chartData, chartType, onItemsStatusChange }) => {
-  if (!content && !chartData) return null;
-
-  const renderContent = (data: string | Record<string, any>): React.ReactNode => {
-    if (typeof data === 'string') {
-      return <MarkdownDisplay content={data} asCard={false} className="text-sm"/>;
-    }
-    if (typeof data === 'object' && data !== null) {
-      if (title === "Keyword Research" && 'primaryKeywords' in data && onItemsStatusChange) {
-        const keywordData = data as GenerateLocalSEOStrategyOutput['keywordResearch'];
-        return (
-          <div className="space-y-4">
-            <ListWithStatusDisplay title="Primary Keywords" items={keywordData.primaryKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
-            <ListWithStatusDisplay title="Secondary Keywords" items={keywordData.secondaryKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
-            <ListWithStatusDisplay title="Long-Tail Keywords" items={keywordData.longTailKeywords || []} onStatusChange={(id, status) => onItemsStatusChange('keywordResearch', id, status)} />
-            {keywordData.toolsMention && <div className="text-sm"><strong className="block mb-1">Tools Mentioned:</strong> <MarkdownDisplay content={keywordData.toolsMention} asCard={false} />}</div>}
-          </div>
-        );
-      }
-      if (title === "Tracking & Reporting" && 'kpis' in data && Array.isArray((data as any).kpis) && onItemsStatusChange) {
-        const trackingData = data as GenerateLocalSEOStrategyOutput['trackingReporting'];
-        return (
-          <div className="space-y-4">
-            {trackingData.googleAnalytics && <div className="text-sm"><strong className="block mb-1">Google Analytics:</strong> <MarkdownDisplay content={trackingData.googleAnalytics} asCard={false} /></div>}
-            {trackingData.googleSearchConsole && <div className="text-sm"><strong className="block mb-1">Google Search Console:</strong> <MarkdownDisplay content={trackingData.googleSearchConsole} asCard={false} /></div>}
-            <ListWithStatusDisplay 
-              title="Key Performance Indicators (KPIs)" 
-              items={trackingData.kpis || []} 
-              onStatusChange={(id, status) => onItemsStatusChange('kpis', id, status)}
-            />
-          </div>
-        );
-      }
-      return (
-        <div className="space-y-2">
-          {Object.entries(data).map(([key, value]) => {
-            const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-            if (typeof value === 'string') {
-              return (
-                <div key={key} className="text-sm">
-                  <strong className="capitalize block mb-1">{formattedKey}: </strong> 
-                  <MarkdownDisplay content={value} asCard={false}/>
-                </div>
-              );
-            }
-             return ( 
-              <div key={key} className="text-sm">
-                <strong className="capitalize block mb-1">{formattedKey}: </strong> 
-                 {typeof value === 'object' ? <pre className="text-xs bg-muted p-2 rounded-md overflow-x-auto">{JSON.stringify(value, null, 2)}</pre> : String(value)}
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
-    return null;
-  };
-  
+const SectionDisplay: React.FC<{ title: string; content?: string; icon?: React.ElementType; }> = 
+  ({ title, content, icon: Icon }) => {
+  if (!content) return null;
   return (
     <Card className="shadow-md">
       <CardHeader>
@@ -161,23 +117,7 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {content && renderContent(content)}
-        {chartType === 'bar' && chartData && chartData.length > 0 && (
-          <div className="h-[300px] mt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <XAxis dataKey="name" stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
-                <RechartsTooltip
-                  contentStyle={{ backgroundColor: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: "var(--radius)" }}
-                  labelStyle={{ color: "hsl(var(--foreground))" }}
-                />
-                <Legend wrapperStyle={{color: "hsl(var(--foreground))"}} />
-                <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        <MarkdownDisplay content={content} asCard={false} className="text-sm"/>
       </CardContent>
     </Card>
   );
@@ -192,6 +132,8 @@ export default function LocalSeoPage() {
   const [result, setResult] = useState<GenerateLocalSEOStrategyOutput | null>(null);
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [isPageLoading, setIsPageLoading] = useState(true);
+  const [itemToDelete, setItemToDelete] = useState<{ listType: 'primaryKeywords' | 'secondaryKeywords' | 'longTailKeywords' | 'kpis'; item: KeywordItemWithStatus } | null>(null);
+
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -213,7 +155,7 @@ export default function LocalSeoPage() {
       .eq('institution_id', institutionId)
       .single();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116: no rows found
+    if (error && error.code !== 'PGRST116') { 
       const errorDetails = `Message: ${error.message}, Details: ${error.details}, Hint: ${error.hint}, Code: ${error.code}`;
       console.error("Error fetching Local SEO strategy:", error, "Full details:", errorDetails);
       toast({ title: "Error Fetching Strategy", description: `Could not fetch saved strategy. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
@@ -249,6 +191,7 @@ export default function LocalSeoPage() {
     const { error } = await supabase.from('local_seo_strategies').upsert({
       institution_id: activeInstitution.id,
       strategy_data: strategyData,
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'institution_id' });
 
     if (error) {
@@ -260,7 +203,7 @@ export default function LocalSeoPage() {
         variant: "destructive",
       });
     } else {
-      toast({ title: "Strategy Saved", description: "Your Local SEO strategy has been saved." });
+      // toast({ title: "Strategy Saved", description: "Your Local SEO strategy has been saved." });
     }
   };
 
@@ -304,8 +247,9 @@ export default function LocalSeoPage() {
         targetAudience: activeInstitution.targetAudience,
         websiteUrl: activeInstitution.websiteUrl || "",
       };
+      const currentStrategyClone = deepClone(result);
       const refineInput: RefineLocalSEOStrategyInput = {
-        currentStrategy: result,
+        currentStrategy: currentStrategyClone,
         userPrompt: refinementPrompt,
         institutionContext: institutionContextForRefinement,
       };
@@ -327,34 +271,55 @@ export default function LocalSeoPage() {
   }
   
   const handleItemStatusChange = async (
-    listType: 'keywordResearch' | 'kpis',
+    listType: 'primaryKeywords' | 'secondaryKeywords' | 'longTailKeywords' | 'kpis',
     itemId: string,
     newStatus: Status
   ) => {
     if (!result || !activeInstitution) return;
 
-    let updatedResult = { ...result };
+    let updatedResult = deepClone(result); 
   
-    const mapItems = (items: (KeywordItemWithStatus | ItemWithIdAndStatus)[]) => 
+    const mapItems = (items: KeywordItemWithStatus[]) => 
       items.map(item => item.id === itemId ? { ...item, status: newStatus } : item);
     
-    if (listType === 'keywordResearch' && updatedResult.keywordResearch) {
-      updatedResult.keywordResearch = {
-        ...updatedResult.keywordResearch,
-        primaryKeywords: mapItems(updatedResult.keywordResearch.primaryKeywords || []) as KeywordItemWithStatus[],
-        secondaryKeywords: mapItems(updatedResult.keywordResearch.secondaryKeywords || []) as KeywordItemWithStatus[],
-        longTailKeywords: mapItems(updatedResult.keywordResearch.longTailKeywords || []) as KeywordItemWithStatus[],
-      };
-    } else if (listType === 'kpis' && updatedResult.trackingReporting) {
-      updatedResult.trackingReporting = {
-        ...updatedResult.trackingReporting,
-        kpis: mapItems(updatedResult.trackingReporting.kpis || []) as KeywordItemWithStatus[], 
-      };
-    }
+    if (listType === 'primaryKeywords') updatedResult.keywordResearch.primaryKeywords = mapItems(updatedResult.keywordResearch.primaryKeywords);
+    else if (listType === 'secondaryKeywords') updatedResult.keywordResearch.secondaryKeywords = mapItems(updatedResult.keywordResearch.secondaryKeywords);
+    else if (listType === 'longTailKeywords') updatedResult.keywordResearch.longTailKeywords = mapItems(updatedResult.keywordResearch.longTailKeywords);
+    else if (listType === 'kpis') updatedResult.trackingReporting.kpis = mapItems(updatedResult.trackingReporting.kpis);
+    
     setResult(updatedResult);
     await saveStrategyToSupabase(updatedResult);
   };
   
+  const handleDeleteSeoItem = async () => {
+    if (!itemToDelete || !result || !activeInstitution) return;
+    let updatedResult = deepClone(result);
+
+    const filterItems = (items: KeywordItemWithStatus[]) => items.filter(item => item.id !== itemToDelete.item.id);
+
+    switch (itemToDelete.listType) {
+      case 'primaryKeywords':
+        updatedResult.keywordResearch.primaryKeywords = filterItems(updatedResult.keywordResearch.primaryKeywords);
+        break;
+      case 'secondaryKeywords':
+        updatedResult.keywordResearch.secondaryKeywords = filterItems(updatedResult.keywordResearch.secondaryKeywords);
+        break;
+      case 'longTailKeywords':
+        updatedResult.keywordResearch.longTailKeywords = filterItems(updatedResult.keywordResearch.longTailKeywords);
+        break;
+      case 'kpis':
+        updatedResult.trackingReporting.kpis = filterItems(updatedResult.trackingReporting.kpis);
+        break;
+    }
+
+    setResult(updatedResult);
+    await saveStrategyToSupabase(updatedResult);
+
+    toast({ title: "Item Deleted", description: "The SEO item has been removed." });
+    setItemToDelete(null);
+  };
+
+
   const getKeywordChartData = (keywordResearch: GenerateLocalSEOStrategyOutput['keywordResearch'] | undefined) => {
     if (!keywordResearch) return [];
     return [
@@ -391,19 +356,80 @@ export default function LocalSeoPage() {
       {result && activeInstitution && (
         <div className="space-y-6">
           <SectionDisplay title="Executive Summary" content={result.executiveSummary} icon={FileText} />
-          <SectionDisplay 
-            title="Keyword Research" 
-            content={result.keywordResearch} 
-            icon={SearchCheck}
-            chartData={getKeywordChartData(result.keywordResearch)}
-            chartType="bar"
-            onItemsStatusChange={handleItemStatusChange}
-          />
-          <SectionDisplay title="Google My Business Optimization" content={result.gmbOptimization} icon={MapPin} />
-          <SectionDisplay title="On-Page Local SEO" content={result.onPageLocalSEO} icon={ListChecks} />
-          <SectionDisplay title="Local Link Building" content={result.localLinkBuilding} icon={Link2} />
-          <SectionDisplay title="Technical Local SEO" content={result.technicalLocalSEO} icon={Settings2} />
-          <SectionDisplay title="Tracking & Reporting" content={result.trackingReporting} icon={Presentation} onItemsStatusChange={handleItemStatusChange} />
+          
+          <Card className="shadow-md">
+            <CardHeader>
+              <CardTitle className="flex items-center text-xl"><SearchCheck className="mr-2 h-6 w-6 text-primary" />Keyword Research</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {result.keywordResearch.primaryKeywords && result.keywordResearch.primaryKeywords.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-md mb-2">Primary Keywords</h4>
+                  <ul className="space-y-3">
+                    {result.keywordResearch.primaryKeywords.map(item => <SeoListItem key={item.id} item={item} onStatusChange={(id, status) => handleItemStatusChange('primaryKeywords', id, status)} onSetItemToDelete={(item) => setItemToDelete({ listType: 'primaryKeywords', item})}/>)}
+                  </ul>
+                </div>
+              )}
+              {result.keywordResearch.secondaryKeywords && result.keywordResearch.secondaryKeywords.length > 0 && (
+                 <div>
+                  <h4 className="font-semibold text-md mt-4 mb-2">Secondary Keywords</h4>
+                  <ul className="space-y-3">
+                    {result.keywordResearch.secondaryKeywords.map(item => <SeoListItem key={item.id} item={item} onStatusChange={(id, status) => handleItemStatusChange('secondaryKeywords', id, status)} onSetItemToDelete={(item) => setItemToDelete({ listType: 'secondaryKeywords', item})} />)}
+                  </ul>
+                </div>
+              )}
+              {result.keywordResearch.longTailKeywords && result.keywordResearch.longTailKeywords.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-md mt-4 mb-2">Long-Tail Keywords</h4>
+                  <ul className="space-y-3">
+                    {result.keywordResearch.longTailKeywords.map(item => <SeoListItem key={item.id} item={item} onStatusChange={(id, status) => handleItemStatusChange('longTailKeywords', id, status)} onSetItemToDelete={(item) => setItemToDelete({ listType: 'longTailKeywords', item})} />)}
+                  </ul>
+                </div>
+              )}
+              {result.keywordResearch.toolsMention && <div className="text-sm mt-4"><strong className="block mb-1">Tools Mentioned:</strong> <MarkdownDisplay content={result.keywordResearch.toolsMention} asCard={false} /></div>}
+              
+              {getKeywordChartData(result.keywordResearch).length > 0 && (
+                <div className="h-[300px] mt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={getKeywordChartData(result.keywordResearch)}>
+                      <XAxis dataKey="name" stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                      <YAxis stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <RechartsTooltip
+                        contentStyle={{ backgroundColor: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: "var(--radius)" }}
+                        labelStyle={{ color: "hsl(var(--foreground))" }}
+                      />
+                      <Legend wrapperStyle={{color: "hsl(var(--foreground))"}} />
+                      <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <SectionDisplay title="Google My Business Optimization" content={result.gmbOptimization && Object.values(result.gmbOptimization).some(val => val) ? JSON.stringify(result.gmbOptimization) : "No GMB optimization details."} icon={MapPin} />
+          <SectionDisplay title="On-Page Local SEO" content={result.onPageLocalSEO && Object.values(result.onPageLocalSEO).some(val => val) ? JSON.stringify(result.onPageLocalSEO) : "No On-Page SEO details."} icon={ListChecks} />
+          <SectionDisplay title="Local Link Building" content={result.localLinkBuilding && Object.values(result.localLinkBuilding).some(val => val) ? JSON.stringify(result.localLinkBuilding) : "No Link Building details."} icon={Link2} />
+          <SectionDisplay title="Technical Local SEO" content={result.technicalLocalSEO && Object.values(result.technicalLocalSEO).some(val => val) ? JSON.stringify(result.technicalLocalSEO) : "No Technical SEO details."} icon={Settings2} />
+
+          <Card className="shadow-md">
+            <CardHeader>
+              <CardTitle className="flex items-center text-xl"><Presentation className="mr-2 h-6 w-6 text-primary" />Tracking & Reporting</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {result.trackingReporting.googleAnalytics && <div className="text-sm"><strong className="block mb-1">Google Analytics:</strong> <MarkdownDisplay content={result.trackingReporting.googleAnalytics} asCard={false} /></div>}
+              {result.trackingReporting.googleSearchConsole && <div className="text-sm"><strong className="block mb-1">Google Search Console:</strong> <MarkdownDisplay content={result.trackingReporting.googleSearchConsole} asCard={false} /></div>}
+              {result.trackingReporting.kpis && result.trackingReporting.kpis.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-md mt-4 mb-2">Key Performance Indicators (KPIs)</h4>
+                  <ul className="space-y-3">
+                    {result.trackingReporting.kpis.map(item => <SeoListItem key={item.id} item={item} onStatusChange={(id, status) => handleItemStatusChange('kpis', id, status)} onSetItemToDelete={(item) => setItemToDelete({ listType: 'kpis', item})}/>)}
+                  </ul>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          
           <SectionDisplay title="Conclusion" content={result.conclusion} icon={Target} />
 
           <Card className="shadow-lg">
@@ -491,7 +517,25 @@ export default function LocalSeoPage() {
           <p className="mt-4 text-lg text-muted-foreground">Generating your local SEO strategy, please wait...</p>
         </div>
       )}
+
+      {itemToDelete && (
+        <AlertDialog open={!!itemToDelete} onOpenChange={(open) => !open && setItemToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the item: "{truncateText(itemToDelete.item.text, 10)}".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setItemToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteSeoItem}>
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
-    

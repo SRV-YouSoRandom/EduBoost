@@ -20,11 +20,22 @@ import StatusControl from "@/components/common/StatusControl";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Building, TrendingUp, Clock, SearchCheck, Wand2 } from "lucide-react";
+import { Loader2, Building, TrendingUp, Clock, SearchCheck, Wand2, Trash2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import MarkdownDisplay from "@/components/common/markdown-display";
-import { cn } from "@/lib/utils";
+import { cn, truncateText, deepClone } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 import type { GenerateGMBOptimizationsInput, GenerateGMBOptimizationsOutput, GMBKeywordSuggestion } from '@/ai/schemas/gmb-optimizer-schemas';
 import { generateGMBOptimizations } from '@/ai/flows/generate-gmb-optimizations';
@@ -43,9 +54,11 @@ const formSchema = z.object({
 type GMBSectionKey = 'descriptionSuggestions' | 'optimizationTips' | 'keywordSuggestionsSection';
 
 
-const KeywordListDisplay: React.FC<{ items: GMBKeywordSuggestion[]; onStatusChange: (itemId: string, newStatus: Status) => void; }> = ({ items, onStatusChange }) => {
-  if (!items || items.length === 0) return <p className="text-muted-foreground">No keyword suggestions available.</p>;
-
+const KeywordListItem: React.FC<{ 
+  item: GMBKeywordSuggestion; 
+  onStatusChange: (itemId: string, newStatus: Status) => void; 
+  onSetKeywordToDelete: (item: GMBKeywordSuggestion) => void;
+}> = ({ item, onStatusChange, onSetKeywordToDelete }) => {
   const getStatusSpecificStyling = (status: Status) => {
     switch (status) {
       case 'done':
@@ -56,38 +69,42 @@ const KeywordListDisplay: React.FC<{ items: GMBKeywordSuggestion[]; onStatusChan
         return '';
     }
   };
-  
+
   return (
-    <ul className="space-y-3">
-      {items.map((item) => (
-        <li 
-          key={item.id}
-          className={cn(
-            "flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 rounded-md border bg-card gap-3",
-            getStatusSpecificStyling(item.status)
-          )}
-        >
-          <div className="flex-1 space-y-1">
-            <span className="block">{item.text}</span>
-            {item.searchVolumeLast24h && (
-              <p className="text-xs text-muted-foreground flex items-center">
-                <Clock className="mr-1 h-3 w-3" /> 24h: {item.searchVolumeLast24h}
-              </p>
-            )}
-            {item.searchVolumeLast7d && (
-              <p className="text-xs text-muted-foreground flex items-center">
-                <TrendingUp className="mr-1 h-3 w-3" /> 7d: {item.searchVolumeLast7d}
-              </p>
-            )}
-          </div>
-          <StatusControl
-            currentStatus={item.status}
-            onStatusChange={(newStatus) => onStatusChange(item.id, newStatus)}
-            size="sm"
-          />
-        </li>
-      ))}
-    </ul>
+    <li 
+      className={cn(
+        "flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 rounded-md border bg-card gap-3",
+        getStatusSpecificStyling(item.status)
+      )}
+    >
+      <div className="flex-1 space-y-1">
+        <span className="block">{item.text}</span>
+        {item.searchVolumeLast24h && (
+          <p className="text-xs text-muted-foreground flex items-center">
+            <Clock className="mr-1 h-3 w-3" /> 24h: {item.searchVolumeLast24h}
+          </p>
+        )}
+        {item.searchVolumeLast7d && (
+          <p className="text-xs text-muted-foreground flex items-center">
+            <TrendingUp className="mr-1 h-3 w-3" /> 7d: {item.searchVolumeLast7d}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <StatusControl
+          currentStatus={item.status}
+          onStatusChange={(newStatus) => onStatusChange(item.id, newStatus)}
+          size="sm"
+        />
+        {item.status === 'rejected' && (
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => onSetKeywordToDelete(item)}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </AlertDialogTrigger>
+        )}
+      </div>
+    </li>
   );
 };
 
@@ -100,6 +117,8 @@ export default function GmbOptimizerPage() {
   const [result, setResult] = useState<GenerateGMBOptimizationsOutput | null>(null);
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [isPageLoading, setIsPageLoading] = useState(true);
+  const [keywordToDelete, setKeywordToDelete] = useState<GMBKeywordSuggestion | null>(null);
+
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -158,6 +177,7 @@ export default function GmbOptimizerPage() {
     const { error } = await supabase.from('gmb_optimizations').upsert({
       institution_id: activeInstitution.id,
       optimization_data: optimizationsData,
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'institution_id' });
 
     if (error) {
@@ -165,7 +185,7 @@ export default function GmbOptimizerPage() {
       console.error("Error saving GMB optimizations:", error, "Full details:", errorDetails);
       toast({ title: "Error Saving Optimizations", description: `Could not save optimizations. ${error.message || 'Please check console for details.'}`, variant: "destructive" });
     } else {
-      toast({ title: "Optimizations Saved", description: "Your GMB optimizations have been saved." });
+      // toast({ title: "Optimizations Saved", description: "Your GMB optimizations have been saved." });
     }
   };
 
@@ -210,8 +230,9 @@ export default function GmbOptimizerPage() {
         targetAudience: activeInstitution.targetAudience,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       };
+      const currentStrategyClone = deepClone(result);
       const refineInput: RefineGMBOptimizationsInput = {
-        currentStrategy: result,
+        currentStrategy: currentStrategyClone,
         userPrompt: refinementPrompt,
         institutionContext: institutionContextForRefinement,
       };
@@ -256,6 +277,20 @@ export default function GmbOptimizerPage() {
     setResult(updatedResult);
     await saveOptimizationsToSupabase(updatedResult);
   };
+  
+  const handleDeleteKeyword = async () => {
+    if (!keywordToDelete || !result || !activeInstitution) return;
+
+    const updatedKeywords = result.keywordSuggestions.filter(kw => kw.id !== keywordToDelete.id);
+    const updatedResult = { ...result, keywordSuggestions: updatedKeywords };
+
+    setResult(updatedResult);
+    await saveOptimizationsToSupabase(updatedResult);
+
+    toast({ title: "Keyword Deleted", description: "The keyword suggestion has been removed." });
+    setKeywordToDelete(null);
+  };
+
 
   if (isInstitutionLoading || isPageLoading) {
      return (
@@ -291,7 +326,20 @@ export default function GmbOptimizerPage() {
               />
             </CardHeader>
             <CardContent>
-              <KeywordListDisplay items={result.keywordSuggestions} onStatusChange={handleKeywordItemStatusChange} />
+              {result.keywordSuggestions && result.keywordSuggestions.length > 0 ? (
+                <ul className="space-y-3">
+                  {result.keywordSuggestions.map((item) => (
+                    <KeywordListItem 
+                      key={item.id}
+                      item={item}
+                      onStatusChange={handleKeywordItemStatusChange}
+                      onSetKeywordToDelete={setKeywordToDelete}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground">No keyword suggestions available.</p>
+              )}
             </CardContent>
           </Card>
 
@@ -401,6 +449,25 @@ export default function GmbOptimizerPage() {
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-lg text-muted-foreground">Generating your GMB optimizations, please wait...</p>
         </div>
+      )}
+
+      {keywordToDelete && (
+        <AlertDialog open={!!keywordToDelete} onOpenChange={(open) => !open && setKeywordToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the keyword: "{truncateText(keywordToDelete.text, 10)}".
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setKeywordToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteKeyword}>
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );
