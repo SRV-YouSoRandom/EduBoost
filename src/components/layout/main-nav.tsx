@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, MapPin, Building, BarChartBig, Lightbulb, Settings } from 'lucide-react';
+import { Home, MapPin, Building, BarChartBig, Lightbulb, Settings, School } from 'lucide-react'; // Added School icon
 import { cn } from '@/lib/utils';
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '@/components/ui/sidebar';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
+  { href: '/institutions', label: 'Institutions', icon: School }, // New Item
   { href: '/local-seo', label: 'Local SEO', icon: MapPin },
   { href: '/gmb-optimizer', label: 'GMB Optimizer', icon: Building },
   { href: '/performance-marketing', label: 'Performance Marketing', icon: BarChartBig },
