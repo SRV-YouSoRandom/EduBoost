@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from '@/lib/utils';
-import { CheckCircle, Circle, XCircle, Loader2, Settings2Icon } from 'lucide-react'; // Using Settings2Icon for In Progress
+import { CheckCircle, Circle, XCircle, Settings2Icon } from 'lucide-react'; // Using Settings2Icon for In Progress
 
 interface StatusControlProps {
   currentStatus: Status;
@@ -21,7 +21,7 @@ interface StatusControlProps {
 
 const statusIconMap: Record<Status, React.ElementType> = {
   pending: Circle,
-  inProgress: Settings2Icon, // Changed from Loader2 to avoid confusion with loading spinners
+  inProgress: Settings2Icon,
   done: CheckCircle,
   rejected: XCircle,
 };
@@ -35,30 +35,33 @@ const statusColorMap: Record<Status, string> = {
 
 
 export default function StatusControl({ currentStatus, onStatusChange, size = 'default' }: StatusControlProps) {
-  const Icon = statusIconMap[currentStatus];
+  const triggerWidthClass = size === 'sm' ? "min-w-[110px] max-w-[150px]" : "min-w-[130px] max-w-[180px]";
 
   return (
     <Select value={currentStatus} onValueChange={(value) => onStatusChange(value as Status)}>
       <SelectTrigger 
         className={cn(
-          "w-[150px]",
-          size === 'sm' ? "h-8 text-xs px-2 py-1" : "h-10",
-          statusColorMap[currentStatus]
+          triggerWidthClass,
+          size === 'sm' ? "h-8 text-xs px-2 py-1" : "h-10"
+          // Color is now applied to SelectItem, and SelectValue will inherit it via selected item's content
         )}
         aria-label={`Current status: ${currentStatus}`}
       >
-        <div className="flex items-center gap-2">
-          <Icon className={cn("h-4 w-4", statusColorMap[currentStatus])} />
-          <SelectValue placeholder="Set status" />
-        </div>
+        {/* SelectValue will render the selected SelectItem's content, which includes its icon and text styling */}
+        <SelectValue placeholder="Set status" />
       </SelectTrigger>
       <SelectContent>
         {STATUS_OPTIONS.map((option) => {
           const OptionIcon = statusIconMap[option.value];
           return (
-            <SelectItem key={option.value} value={option.value}>
+            <SelectItem 
+              key={option.value} 
+              value={option.value}
+              className={cn(statusColorMap[option.value])} // Apply color to the SelectItem itself
+            >
               <div className="flex items-center gap-2">
-                <OptionIcon className={cn("h-4 w-4", statusColorMap[option.value])} />
+                {/* Icon color will be inherited from parent SelectItem's text color */}
+                <OptionIcon className={cn("h-4 w-4")} /> 
                 {option.label}
               </div>
             </SelectItem>

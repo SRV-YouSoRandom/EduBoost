@@ -110,7 +110,7 @@ export default function ContentIdeasPage() {
     const { error } = await supabase.from('content_ideas').upsert({
       institution_id: activeInstitution.id,
       ideas_data: ideasData,
-      updated_at: new Date().toISOString(), // Ensure updated_at is set
+      updated_at: new Date().toISOString(), 
     }, { onConflict: 'institution_id' });
 
     if (error) {
@@ -312,19 +312,19 @@ export default function ContentIdeasPage() {
                   <li 
                     key={idea.id} 
                     className={cn(
-                      "p-4 rounded-lg border bg-card overflow-hidden", // Added overflow-hidden
+                      "p-4 rounded-lg border bg-card overflow-hidden",
                       getStatusSpecificStyling(idea.status)
                     )}
                   >
                     <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
-                      <div className="w-full flex flex-col md:flex-row md:items-center md:justify-between gap-4"> {/* Added w-full */}
+                      <div className="w-full flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <CollapsibleTrigger asChild>
                           <Button variant="ghost" className="flex-1 justify-start text-left px-0 text-base items-center min-w-0">
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
-                             <span className="flex-1 font-medium min-w-0 truncate">{idea.text}</span>
+                             <span className="flex-1 font-medium min-w-0 truncate" title={idea.text}>{idea.text}</span>
                           </Button>
                         </CollapsibleTrigger>
-                         <div className="flex items-center gap-2 flex-shrink-0 md:ml-4">
+                         <div className="flex items-center gap-2 md:ml-4"> {/* Removed flex-shrink-0 */}
                           <StatusControl
                             currentStatus={idea.status}
                             onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
@@ -333,7 +333,7 @@ export default function ContentIdeasPage() {
                         </div>
                       </div>
                       <CollapsibleContent className="mt-4 pt-4 border-t space-y-3">
-                        <p className="font-semibold text-md mb-3 break-words">{idea.text}</p> {/* Added break-words */}
+                        <p className="font-semibold text-md mb-3 break-words">{idea.text}</p>
                         {idea.isExpanding && (
                           <div className="flex items-center text-muted-foreground">
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating details...
