@@ -107,7 +107,7 @@ export default function ContentIdeasPage() {
     }
     setOpenCollapsibles({}); 
     setIsPageLoading(false);
-  }, [activeInstitution]);
+  }, [activeInstitution, form]); // Added form to dependency array
 
 
   useEffect(() => {
@@ -310,9 +310,9 @@ export default function ContentIdeasPage() {
                     <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <CollapsibleTrigger asChild>
-                          <Button variant="ghost" className="flex-1 justify-start text-left px-0 hover:bg-transparent text-base">
+                          <Button variant="ghost" className="flex-1 justify-start text-left px-0 text-base">
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
-                             <span className="flex-1 font-medium">{idea.text}</span>
+                             <span className="flex-1 font-medium min-w-0 break-words">{idea.text}</span>
                           </Button>
                         </CollapsibleTrigger>
                          <div className="flex items-center gap-2 flex-shrink-0 md:ml-4">
