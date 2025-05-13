@@ -18,7 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import PageHeaderTitle from "@/components/common/page-header-title";
 import MarkdownDisplay from "@/components/common/markdown-display";
 import StatusControl from "@/components/common/StatusControl";
-import type { Status, ItemWithIdAndStatus } from "@/types/common"; 
+import type { Status } from "@/types/common"; 
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText, TrendingUp, Clock, Wand2, Trash2 } from "lucide-react";
@@ -38,7 +38,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput, KeywordItemWithStatus, AIKeywordResearch, AITrackingReporting } from '@/ai/schemas/local-seo-schemas'; // Added AI types
+import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput, KeywordItemWithStatus } from '@/ai/schemas/local-seo-schemas'; 
 import { generateLocalSEOStrategy } from '@/ai/flows/generate-local-seo-strategy';
 import { refineLocalSEOStrategy, RefineLocalSEOStrategyInput } from '@/ai/flows/refine-local-seo-strategy';
 
@@ -51,13 +51,16 @@ const formSchema = z.object({
   websiteUrl: z.string().url("Please enter a valid URL."),
 });
 
+type KeywordListType = 'primaryKeywords' | 'secondaryKeywords' | 'longTailKeywords' | 'kpis';
+
 interface SeoListItemProps {
   item: KeywordItemWithStatus;
-  onStatusChange: (itemId: string, newStatus: Status) => void;
-  onSetItemToDelete: (item: KeywordItemWithStatus) => void;
+  listType: KeywordListType;
+  onStatusChange: (listType: KeywordListType, itemId: string, newStatus: Status) => void;
+  onDeleteItem: (listType: KeywordListType, itemId: string) => void;
 }
 
-const SeoListItem: React.FC<SeoListItemProps> = ({ item, onStatusChange, onSetItemToDelete }) => {
+const SeoListItem: React.FC<SeoListItemProps> = ({ item, listType, onStatusChange, onDeleteItem }) => {
   const getStatusSpecificStyling = (status: Status) => {
     switch (status) {
       case 'done': return 'line-through text-muted-foreground opacity-70';
@@ -89,15 +92,29 @@ const SeoListItem: React.FC<SeoListItemProps> = ({ item, onStatusChange, onSetIt
       <div className="flex items-center gap-2 flex-shrink-0">
         <StatusControl
           currentStatus={item.status}
-          onStatusChange={(newStatus) => onStatusChange(item.id, newStatus)}
+          onStatusChange={(newStatus) => onStatusChange(listType, item.id, newStatus)}
           size="sm"
         />
         {item.status === 'rejected' && (
-           <AlertDialogTrigger asChild>
-            <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => onSetItemToDelete(item)}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </AlertDialogTrigger>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="icon" className="h-7 w-7">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the item: "{truncateText(item.text, 10)}".
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onDeleteItem(listType, item.id)}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
         )}
       </div>
     </li>
@@ -105,9 +122,21 @@ const SeoListItem: React.FC<SeoListItemProps> = ({ item, onStatusChange, onSetIt
 };
 
 
-const SectionDisplay: React.FC<{ title: string; content?: string; icon?: React.ElementType; }> = 
+const SectionDisplay: React.FC<{ title: string; content?: string | Record<string, any>; icon?: React.ElementType; }> = 
   ({ title, content, icon: Icon }) => {
   if (!content) return null;
+
+  let displayContent: string;
+  if (typeof content === 'object') {
+    // Basic formatting for object content (like gmbOptimization)
+    // You might want a more sophisticated way to render these objects as markdown lists
+    displayContent = Object.entries(content)
+      .map(([key, value]) => `**${key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:** ${value}`)
+      .join('\n\n');
+  } else {
+    displayContent = content;
+  }
+  
   return (
     <Card className="shadow-md">
       <CardHeader>
@@ -117,7 +146,7 @@ const SectionDisplay: React.FC<{ title: string; content?: string; icon?: React.E
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <MarkdownDisplay content={content} asCard={false} className="text-sm"/>
+        <MarkdownDisplay content={displayContent} asCard={false} className="text-sm"/>
       </CardContent>
     </Card>
   );
@@ -132,7 +161,7 @@ export default function LocalSeoPage() {
   const [result, setResult] = useState<GenerateLocalSEOStrategyOutput | null>(null);
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [isPageLoading, setIsPageLoading] = useState(true);
-  const [itemToDelete, setItemToDelete] = useState<{ listType: 'primaryKeywords' | 'secondaryKeywords' | 'longTailKeywords' | 'kpis'; item: KeywordItemWithStatus } | null>(null);
+  // const [itemToDelete, setItemToDelete] = useState<{ listType: KeywordListType; item: KeywordItemWithStatus } | null>(null); // Removed
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -271,7 +300,7 @@ export default function LocalSeoPage() {
   }
   
   const handleItemStatusChange = async (
-    listType: 'primaryKeywords' | 'secondaryKeywords' | 'longTailKeywords' | 'kpis',
+    listType: KeywordListType,
     itemId: string,
     newStatus: Status
   ) => {
@@ -291,13 +320,13 @@ export default function LocalSeoPage() {
     await saveStrategyToSupabase(updatedResult);
   };
   
-  const handleDeleteSeoItem = async () => {
-    if (!itemToDelete || !result || !activeInstitution) return;
+  const handleDeleteSeoItem = async (listType: KeywordListType, itemId: string) => {
+    if (!listType || !itemId || !result || !activeInstitution) return;
     let updatedResult = deepClone(result);
 
-    const filterItems = (items: KeywordItemWithStatus[]) => items.filter(item => item.id !== itemToDelete.item.id);
+    const filterItems = (items: KeywordItemWithStatus[]) => items.filter(item => item.id !== itemId);
 
-    switch (itemToDelete.listType) {
+    switch (listType) {
       case 'primaryKeywords':
         updatedResult.keywordResearch.primaryKeywords = filterItems(updatedResult.keywordResearch.primaryKeywords);
         break;
@@ -316,7 +345,6 @@ export default function LocalSeoPage() {
     await saveStrategyToSupabase(updatedResult);
 
     toast({ title: "Item Deleted", description: "The SEO item has been removed." });
-    setItemToDelete(null);
   };
 
 
@@ -366,7 +394,7 @@ export default function LocalSeoPage() {
                 <div>
                   <h4 className="font-semibold text-md mb-2">Primary Keywords</h4>
                   <ul className="space-y-3">
-                    {result.keywordResearch.primaryKeywords.map(item => <SeoListItem key={item.id} item={item} onStatusChange={(id, status) => handleItemStatusChange('primaryKeywords', id, status)} onSetItemToDelete={(item) => setItemToDelete({ listType: 'primaryKeywords', item})}/>)}
+                    {result.keywordResearch.primaryKeywords.map(item => <SeoListItem key={item.id} item={item} listType="primaryKeywords" onStatusChange={handleItemStatusChange} onDeleteItem={handleDeleteSeoItem}/>)}
                   </ul>
                 </div>
               )}
@@ -374,7 +402,7 @@ export default function LocalSeoPage() {
                  <div>
                   <h4 className="font-semibold text-md mt-4 mb-2">Secondary Keywords</h4>
                   <ul className="space-y-3">
-                    {result.keywordResearch.secondaryKeywords.map(item => <SeoListItem key={item.id} item={item} onStatusChange={(id, status) => handleItemStatusChange('secondaryKeywords', id, status)} onSetItemToDelete={(item) => setItemToDelete({ listType: 'secondaryKeywords', item})} />)}
+                    {result.keywordResearch.secondaryKeywords.map(item => <SeoListItem key={item.id} item={item} listType="secondaryKeywords" onStatusChange={handleItemStatusChange} onDeleteItem={handleDeleteSeoItem} />)}
                   </ul>
                 </div>
               )}
@@ -382,7 +410,7 @@ export default function LocalSeoPage() {
                 <div>
                   <h4 className="font-semibold text-md mt-4 mb-2">Long-Tail Keywords</h4>
                   <ul className="space-y-3">
-                    {result.keywordResearch.longTailKeywords.map(item => <SeoListItem key={item.id} item={item} onStatusChange={(id, status) => handleItemStatusChange('longTailKeywords', id, status)} onSetItemToDelete={(item) => setItemToDelete({ listType: 'longTailKeywords', item})} />)}
+                    {result.keywordResearch.longTailKeywords.map(item => <SeoListItem key={item.id} item={item} listType="longTailKeywords" onStatusChange={handleItemStatusChange} onDeleteItem={handleDeleteSeoItem} />)}
                   </ul>
                 </div>
               )}
@@ -407,10 +435,10 @@ export default function LocalSeoPage() {
             </CardContent>
           </Card>
 
-          <SectionDisplay title="Google My Business Optimization" content={result.gmbOptimization && Object.values(result.gmbOptimization).some(val => val) ? JSON.stringify(result.gmbOptimization) : "No GMB optimization details."} icon={MapPin} />
-          <SectionDisplay title="On-Page Local SEO" content={result.onPageLocalSEO && Object.values(result.onPageLocalSEO).some(val => val) ? JSON.stringify(result.onPageLocalSEO) : "No On-Page SEO details."} icon={ListChecks} />
-          <SectionDisplay title="Local Link Building" content={result.localLinkBuilding && Object.values(result.localLinkBuilding).some(val => val) ? JSON.stringify(result.localLinkBuilding) : "No Link Building details."} icon={Link2} />
-          <SectionDisplay title="Technical Local SEO" content={result.technicalLocalSEO && Object.values(result.technicalLocalSEO).some(val => val) ? JSON.stringify(result.technicalLocalSEO) : "No Technical SEO details."} icon={Settings2} />
+          <SectionDisplay title="Google My Business Optimization" content={result.gmbOptimization} icon={MapPin} />
+          <SectionDisplay title="On-Page Local SEO" content={result.onPageLocalSEO} icon={ListChecks} />
+          <SectionDisplay title="Local Link Building" content={result.localLinkBuilding} icon={Link2} />
+          <SectionDisplay title="Technical Local SEO" content={result.technicalLocalSEO} icon={Settings2} />
 
           <Card className="shadow-md">
             <CardHeader>
@@ -423,7 +451,7 @@ export default function LocalSeoPage() {
                 <div>
                   <h4 className="font-semibold text-md mt-4 mb-2">Key Performance Indicators (KPIs)</h4>
                   <ul className="space-y-3">
-                    {result.trackingReporting.kpis.map(item => <SeoListItem key={item.id} item={item} onStatusChange={(id, status) => handleItemStatusChange('kpis', id, status)} onSetItemToDelete={(item) => setItemToDelete({ listType: 'kpis', item})}/>)}
+                    {result.trackingReporting.kpis.map(item => <SeoListItem key={item.id} item={item} listType="kpis" onStatusChange={handleItemStatusChange} onDeleteItem={handleDeleteSeoItem}/>)}
                   </ul>
                 </div>
               )}
@@ -516,25 +544,6 @@ export default function LocalSeoPage() {
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-lg text-muted-foreground">Generating your local SEO strategy, please wait...</p>
         </div>
-      )}
-
-      {itemToDelete && (
-        <AlertDialog open={!!itemToDelete} onOpenChange={(open) => !open && setItemToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the item: "{truncateText(itemToDelete.item.text, 10)}".
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setItemToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteSeoItem}>
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       )}
     </div>
   );

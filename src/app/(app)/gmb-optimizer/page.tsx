@@ -54,11 +54,13 @@ const formSchema = z.object({
 type GMBSectionKey = 'descriptionSuggestions' | 'optimizationTips' | 'keywordSuggestionsSection';
 
 
-const KeywordListItem: React.FC<{ 
-  item: GMBKeywordSuggestion; 
-  onStatusChange: (itemId: string, newStatus: Status) => void; 
-  onSetKeywordToDelete: (item: GMBKeywordSuggestion) => void;
-}> = ({ item, onStatusChange, onSetKeywordToDelete }) => {
+interface KeywordListItemProps {
+  item: GMBKeywordSuggestion;
+  onStatusChange: (itemId: string, newStatus: Status) => void;
+  onDeleteKeyword: (itemId: string) => void;
+}
+
+const KeywordListItem: React.FC<KeywordListItemProps> = ({ item, onStatusChange, onDeleteKeyword }) => {
   const getStatusSpecificStyling = (status: Status) => {
     switch (status) {
       case 'done':
@@ -97,11 +99,25 @@ const KeywordListItem: React.FC<{
           size="sm"
         />
         {item.status === 'rejected' && (
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => onSetKeywordToDelete(item)}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </AlertDialogTrigger>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" size="icon" className="h-7 w-7">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete the keyword: "{truncateText(item.text, 10)}".
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onDeleteKeyword(item.id)}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
     </li>
@@ -117,7 +133,7 @@ export default function GmbOptimizerPage() {
   const [result, setResult] = useState<GenerateGMBOptimizationsOutput | null>(null);
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [isPageLoading, setIsPageLoading] = useState(true);
-  const [keywordToDelete, setKeywordToDelete] = useState<GMBKeywordSuggestion | null>(null);
+  // const [keywordToDelete, setKeywordToDelete] = useState<GMBKeywordSuggestion | null>(null); // Removed
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -278,17 +294,16 @@ export default function GmbOptimizerPage() {
     await saveOptimizationsToSupabase(updatedResult);
   };
   
-  const handleDeleteKeyword = async () => {
-    if (!keywordToDelete || !result || !activeInstitution) return;
+  const handleDeleteKeyword = async (keywordId: string) => {
+    if (!keywordId || !result || !activeInstitution) return;
 
-    const updatedKeywords = result.keywordSuggestions.filter(kw => kw.id !== keywordToDelete.id);
+    const updatedKeywords = result.keywordSuggestions.filter(kw => kw.id !== keywordId);
     const updatedResult = { ...result, keywordSuggestions: updatedKeywords };
 
     setResult(updatedResult);
     await saveOptimizationsToSupabase(updatedResult);
 
     toast({ title: "Keyword Deleted", description: "The keyword suggestion has been removed." });
-    setKeywordToDelete(null);
   };
 
 
@@ -333,7 +348,7 @@ export default function GmbOptimizerPage() {
                       key={item.id}
                       item={item}
                       onStatusChange={handleKeywordItemStatusChange}
-                      onSetKeywordToDelete={setKeywordToDelete}
+                      onDeleteKeyword={handleDeleteKeyword}
                     />
                   ))}
                 </ul>
@@ -449,25 +464,6 @@ export default function GmbOptimizerPage() {
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-lg text-muted-foreground">Generating your GMB optimizations, please wait...</p>
         </div>
-      )}
-
-      {keywordToDelete && (
-        <AlertDialog open={!!keywordToDelete} onOpenChange={(open) => !open && setKeywordToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the keyword: "{truncateText(keywordToDelete.text, 10)}".
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setKeywordToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteKeyword}>
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       )}
     </div>
   );

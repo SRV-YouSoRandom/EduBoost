@@ -61,7 +61,7 @@ export default function ContentIdeasPage() {
   const [openCollapsibles, setOpenCollapsibles] = useState<Record<string, boolean>>({});
   const [refinementPrompt, setRefinementPrompt] = useState("");
   const [isPageLoading, setIsPageLoading] = useState(true);
-  const [ideaToDelete, setIdeaToDelete] = useState<ContentIdeaWithStatus | null>(null);
+  // const [ideaToDelete, setIdeaToDelete] = useState<ContentIdeaWithStatus | null>(null); // Removed
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -207,17 +207,16 @@ export default function ContentIdeasPage() {
     await saveIdeasToSupabase(updatedResult);
   };
 
-  const handleDeleteIdea = async () => {
-    if (!ideaToDelete || !result || !activeInstitution) return;
+  const handleDeleteIdea = async (ideaId: string) => {
+    if (!ideaId || !result || !activeInstitution) return;
 
-    const updatedIdeasArray = result.contentIdeas.filter(idea => idea.id !== ideaToDelete.id);
+    const updatedIdeasArray = result.contentIdeas.filter(idea => idea.id !== ideaId);
     const updatedResult = { ...result, contentIdeas: updatedIdeasArray };
     
     setResult(updatedResult); // Optimistic update
     await saveIdeasToSupabase(updatedResult); // Persist change
     
     toast({ title: "Idea Deleted", description: "The content idea has been removed." });
-    setIdeaToDelete(null); // Close dialog
   };
 
 
@@ -368,11 +367,27 @@ export default function ContentIdeasPage() {
                             size="sm"
                           />
                           {idea.status === 'rejected' && (
-                            <AlertDialogTrigger asChild>
-                              <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => setIdeaToDelete(idea)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
+                             <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="icon" className="h-7 w-7">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This action cannot be undone. This will permanently delete the content idea: "{truncateText(idea.text, 5)}".
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteIdea(idea.id)}>
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           )}
                         </div>
                       </div>
@@ -491,25 +506,6 @@ export default function ContentIdeasPage() {
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-lg text-muted-foreground">Brainstorming content ideas for you...</p>
         </div>
-      )}
-
-      {ideaToDelete && (
-        <AlertDialog open={!!ideaToDelete} onOpenChange={(open) => !open && setIdeaToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the content idea: "{truncateText(ideaToDelete.text, 10)}".
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setIdeaToDelete(null)}>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDeleteIdea}>
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       )}
     </div>
   );
