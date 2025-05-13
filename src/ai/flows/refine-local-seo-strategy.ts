@@ -13,16 +13,17 @@ import { mapAiKeywordsToItemsWithStatus, mapAiKpisToItemsWithStatus } from '@/ai
 import {
   RefineLocalSEOStrategyInputSchema,
   GenerateLocalSEOStrategyOutputSchema,
-  AIPromptOutputSchema, // Replaces AIPromptOutputSchemaForRefinement as they are identical
+  AIPromptOutputSchema, 
 } from '@/ai/schemas/local-seo-schemas';
 import type { 
   RefineLocalSEOStrategyInput as RefineInputType, 
   GenerateLocalSEOStrategyOutput as LocalSEOOutputType,
-  GenerateLocalSEOStrategyInput, // For institutionContext type within RefineLocalSEOStrategyInput
+  GenerateLocalSEOStrategyInput, 
 } from '@/ai/schemas/local-seo-schemas';
+import { z } from 'zod';
 
 export type RefineLocalSEOStrategyInput = RefineInputType;
-export type GenerateLocalSEOStrategyOutput = LocalSEOOutputType; // Output type for refinement is same as generation
+export type GenerateLocalSEOStrategyOutput = LocalSEOOutputType; 
 
 export async function refineLocalSEOStrategy(
   input: RefineLocalSEOStrategyInput
@@ -30,10 +31,15 @@ export async function refineLocalSEOStrategy(
   return refineLocalSEOStrategyFlow(input);
 }
 
+// Define a new schema for the prompt's input, including the pre-serialized JSON string
+const RefineLocalSEOStrategyPromptInputInternalSchema = RefineLocalSEOStrategyInputSchema.extend({
+  currentStrategyJson: z.string().describe("The existing Local SEO strategy as a JSON string.")
+});
+
 const refinePrompt = ai.definePrompt({
   name: 'refineLocalSEOStrategyPrompt',
-  input: {schema: RefineLocalSEOStrategyInputSchema},
-  output: {schema: AIPromptOutputSchema}, // AI returns the refined structure based on AIPromptOutputSchema
+  input: {schema: RefineLocalSEOStrategyPromptInputInternalSchema}, // Use the internal schema
+  output: {schema: AIPromptOutputSchema}, 
   prompt: `You are an expert local SEO strategist. You are given an existing Local SEO strategy for an educational institution and a user prompt asking for modifications.
 Institution Context:
   Name: {{institutionContext.institutionName}}
@@ -44,7 +50,7 @@ Institution Context:
 
 Existing Strategy:
 \`\`\`json
-{{{jsonEncode currentStrategy}}}
+{{{currentStrategyJson}}}
 \`\`\`
 
 User's Refinement Request: "{{userPrompt}}"
@@ -53,34 +59,37 @@ Based on the user's request, refine the existing strategy.
 - If the user asks to add or analyze keywords, update the 'keywordResearch' section accordingly. Provide estimated search volumes for new keywords if possible, similar to the existing format. Preserve existing keywords unless specified otherwise.
 - If the request concerns other sections (e.g., GMB, on-page SEO, link building), modify those parts.
 - Ensure the entire output is a single, valid JSON object conforming to the AI output schema (AIPromptOutputSchema).
-- Maintain the overall structure and try to preserve IDs and statuses for items not directly affected by the prompt, if applicable (though for keywords, you'll be generating the text and search volumes).
+- Maintain the overall structure.
 - For keyword arrays in 'keywordResearch' (primaryKeywords, secondaryKeywords, longTailKeywords), each item MUST be an object with "text", "searchVolumeLast24h", and "searchVolumeLast7d".
 - For the 'kpis' array in 'trackingReporting', each item MUST be an object with "text".
 
 Return the complete, updated strategy as a JSON object.
   `,
-  helpers: {
-    jsonEncode: (context: any) => JSON.stringify(context, null, 2),
-  }
+  // Removed helpers block as jsonEncode is no longer used
 });
 
 const refineLocalSEOStrategyFlow = ai.defineFlow(
   {
     name: 'refineLocalSEOStrategyFlow',
-    inputSchema: RefineLocalSEOStrategyInputSchema,
-    outputSchema: GenerateLocalSEOStrategyOutputSchema, // Final output matches the original structure
+    inputSchema: RefineLocalSEOStrategyInputSchema, // External input schema remains the same
+    outputSchema: GenerateLocalSEOStrategyOutputSchema, 
   },
   async (input): Promise<GenerateLocalSEOStrategyOutput> => {
-    const {output: aiRefinedOutput} = await refinePrompt(input);
+    // Pre-serialize currentStrategy to a JSON string
+    const currentStrategyJsonString = JSON.stringify(input.currentStrategy, null, 2);
+
+    const promptInput = {
+      ...input,
+      currentStrategyJson: currentStrategyJsonString,
+    };
+
+    const {output: aiRefinedOutput} = await refinePrompt(promptInput);
 
     if (!aiRefinedOutput) {
       console.error("AI failed to generate valid structured output for Local SEO Strategy refinement.");
-      // Consider returning the original strategy or a more specific error structure
-      // For now, throwing an error as per previous logic.
       throw new Error("Failed to refine local SEO strategy. The AI model did not return the expected data structure.");
     }
     
-    // Map AI output (which might not have IDs/statuses) to the final schema
     return {
       executiveSummary: aiRefinedOutput.executiveSummary,
       keywordResearch: {

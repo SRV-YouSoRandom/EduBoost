@@ -16,6 +16,7 @@ import {
   ContentIdeaWithStatus,
   GenerateContentIdeasInputSchema, // For institutionContext
 } from '@/ai/schemas/content-ideas-schemas';
+import { z } from 'zod';
 
 export type { RefineContentIdeasInput, GenerateContentIdeasOutput } from '@/ai/schemas/content-ideas-schemas';
 
@@ -25,9 +26,14 @@ export async function refineContentIdeas(
   return refineContentIdeasFlow(input);
 }
 
+// Define a new schema for the prompt's input, including the pre-serialized JSON string
+const RefineContentIdeasPromptInputInternalSchema = RefineContentIdeasInputSchema.extend({
+  currentIdeasJson: z.string().describe("The existing list of content ideas as a JSON string.")
+});
+
 const refinePrompt = ai.definePrompt({
   name: 'refineContentIdeasPrompt',
-  input: { schema: RefineContentIdeasInputSchema },
+  input: { schema: RefineContentIdeasPromptInputInternalSchema }, // Use the internal schema
   output: { schema: RefineContentIdeasPromptOutputSchema }, // AI returns a list of strings
   prompt: `You are an expert content strategist for educational institutions.
 You are given an existing list of content ideas and a user prompt asking for modifications.
@@ -41,12 +47,12 @@ Institution Context:
 
 Existing Content Ideas (some may have expanded details, focus on refining the idea texts):
 \`\`\`json
-{{{jsonEncode currentIdeas.contentIdeas}}}
+{{{currentIdeasJson}}}
 \`\`\`
 
 User's Refinement Request: "{{userPrompt}}"
 
-Based on the user's request, refine the existing list of content ideas.
+Based on a user's request, refine the existing list of content ideas.
 - If the user asks to add new types of ideas (e.g., "more video ideas", "ideas for parents"), generate those.
 - If the user asks to focus on a specific program or theme, tailor existing ideas or add new ones.
 - If the user asks to remove certain types of ideas, omit them from the new list.
@@ -55,25 +61,32 @@ Based on the user's request, refine the existing list of content ideas.
 
 Return the refined list of content idea texts as an array of strings in the 'refinedContentIdeas' field.
   `,
-  helpers: {
-    jsonEncode: (context: any) => {
-      // Simplify the context for the prompt to avoid excessive length if details are present
-      if (Array.isArray(context)) {
-        return JSON.stringify(context.map(idea => ({ text: idea.text, status: idea.status })), null, 2);
-      }
-      return JSON.stringify(context, null, 2);
-    },
-  }
+  // Removed helpers block as jsonEncode is no longer used in the template
 });
 
 const refineContentIdeasFlow = ai.defineFlow(
   {
     name: 'refineContentIdeasFlow',
-    inputSchema: RefineContentIdeasInputSchema,
+    inputSchema: RefineContentIdeasInputSchema, // External input schema remains the same
     outputSchema: GenerateContentIdeasOutputSchema,
   },
   async (input): Promise<import('@/ai/schemas/content-ideas-schemas').GenerateContentIdeasOutput> => {
-    const { output: aiRefinedOutput } = await refinePrompt(input);
+    // Pre-serialize currentIdeas.contentIdeas to a JSON string
+    let currentIdeasJsonString = "[]"; // Default to empty array string
+    if (input.currentIdeas && Array.isArray(input.currentIdeas.contentIdeas)) {
+      currentIdeasJsonString = JSON.stringify(
+        input.currentIdeas.contentIdeas.map(idea => ({ text: idea.text, status: idea.status })),
+        null,
+        2
+      );
+    }
+    
+    const promptInput = {
+      ...input,
+      currentIdeasJson: currentIdeasJsonString,
+    };
+
+    const { output: aiRefinedOutput } = await refinePrompt(promptInput);
 
     if (aiRefinedOutput && aiRefinedOutput.refinedContentIdeas) {
       const refinedIdeasWithStatus: ContentIdeaWithStatus[] = aiRefinedOutput.refinedContentIdeas.map((ideaText) => {

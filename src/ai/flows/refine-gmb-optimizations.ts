@@ -16,6 +16,7 @@ import {
   GMBAIPromptOutputSchema, // AI will output this structure, which then gets mapped
   GMBKeywordSuggestion,
 } from '@/ai/schemas/gmb-optimizer-schemas';
+import { z } from 'zod';
 
 export type { RefineGMBOptimizationsInput, GenerateGMBOptimizationsOutput } from '@/ai/schemas/gmb-optimizer-schemas';
 
@@ -25,9 +26,15 @@ export async function refineGMBOptimizations(
   return refineGMBOptimizationsFlow(input);
 }
 
+// Define a new schema for the prompt's input, including the pre-serialized JSON string
+const RefineGMBOptimizationsPromptInputInternalSchema = RefineGMBOptimizationsInputSchema.extend({
+  currentStrategyJson: z.string().describe("The existing GMB optimization strategy as a JSON string.")
+});
+
+
 const refinePrompt = ai.definePrompt({
   name: 'refineGMBOptimizationsPrompt',
-  input: { schema: RefineGMBOptimizationsInputSchema },
+  input: { schema: RefineGMBOptimizationsPromptInputInternalSchema }, // Use the internal schema
   output: { schema: GMBAIPromptOutputSchema }, // AI returns the "raw" structure, mapping happens in flow
   prompt: `You are an expert in Google My Business (GMB) optimization.
 You are given an existing GMB optimization strategy and a user prompt asking for modifications.
@@ -42,7 +49,7 @@ Institution Context:
 
 Existing GMB Strategy:
 \`\`\`json
-{{{jsonEncode currentStrategy}}}
+{{{currentStrategyJson}}}
 \`\`\`
 
 User's Refinement Request: "{{userPrompt}}"
@@ -56,19 +63,25 @@ Based on the user's request, refine the existing strategy.
 
 Return the complete, updated GMB strategy sections as a JSON object.
   `,
-  helpers: {
-    jsonEncode: (context: any) => JSON.stringify(context, null, 2),
-  }
+  // Removed helpers block as jsonEncode is no longer used
 });
 
 const refineGMBOptimizationsFlow = ai.defineFlow(
   {
     name: 'refineGMBOptimizationsFlow',
-    inputSchema: RefineGMBOptimizationsInputSchema,
+    inputSchema: RefineGMBOptimizationsInputSchema, // External input schema remains the same
     outputSchema: GenerateGMBOptimizationsOutputSchema,
   },
   async (input): Promise<import('@/ai/schemas/gmb-optimizer-schemas').GenerateGMBOptimizationsOutput> => {
-    const { output: aiRefinedOutput } = await refinePrompt(input);
+    // Pre-serialize currentStrategy to a JSON string
+    const currentStrategyJsonString = JSON.stringify(input.currentStrategy, null, 2);
+    
+    const promptInput = {
+      ...input,
+      currentStrategyJson: currentStrategyJsonString,
+    };
+    
+    const { output: aiRefinedOutput } = await refinePrompt(promptInput);
 
     if (!aiRefinedOutput || !aiRefinedOutput.keywordSuggestions || !aiRefinedOutput.descriptionSuggestions || !aiRefinedOutput.optimizationTips) {
       console.error("AI failed to generate valid structured output for GMB refinement.");
@@ -78,14 +91,9 @@ const refineGMBOptimizationsFlow = ai.defineFlow(
         ...input.currentStrategy, // Spread original strategy
         descriptionSuggestions: "Error: Could not refine description. Original preserved.",
         optimizationTips: "Error: Could not refine tips. Original preserved.",
-        // Decide how to handle keywords if they fail. Maybe keep original?
-        // For simplicity, if AI output is malformed, we could return the original.
       };
     }
 
-    // Map AI-generated keywords to GMBKeywordSuggestion with ID and status
-    // This will generate new IDs for all keywords, even existing ones, if the AI regenerates the list.
-    // A more sophisticated approach would be to merge based on keyword text if IDs are not stable from AI.
     const mappedKeywordSuggestions: GMBKeywordSuggestion[] = aiRefinedOutput.keywordSuggestions.map(kw => ({
       id: crypto.randomUUID(),
       text: kw.text,
@@ -96,11 +104,11 @@ const refineGMBOptimizationsFlow = ai.defineFlow(
 
     return {
       keywordSuggestions: mappedKeywordSuggestions,
-      keywordSuggestionsSectionStatus: input.currentStrategy.keywordSuggestionsSectionStatus, // Preserve original section status or reset to pending
+      keywordSuggestionsSectionStatus: input.currentStrategy.keywordSuggestionsSectionStatus, 
       descriptionSuggestions: aiRefinedOutput.descriptionSuggestions,
-      descriptionSuggestionsStatus: input.currentStrategy.descriptionSuggestionsStatus, // Preserve or reset
+      descriptionSuggestionsStatus: input.currentStrategy.descriptionSuggestionsStatus,
       optimizationTips: aiRefinedOutput.optimizationTips,
-      optimizationTipsStatus: input.currentStrategy.optimizationTipsStatus, // Preserve or reset
+      optimizationTipsStatus: input.currentStrategy.optimizationTipsStatus,
     };
   }
 );
