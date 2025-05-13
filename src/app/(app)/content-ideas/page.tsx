@@ -307,21 +307,21 @@ export default function ContentIdeasPage() {
               <CardDescription>Manage status and expand ideas for details like scripts or outlines. Click an idea to see more.</CardDescription>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-4"> {/* Increased spacing */}
+              <ul className="space-y-4">
                 {result.contentIdeas.map((idea: ContentIdeaWithStatus) => (
                   <li 
                     key={idea.id} 
                     className={cn(
-                      "p-4 rounded-lg border bg-card",
+                      "p-4 rounded-lg border bg-card overflow-hidden", // Added overflow-hidden
                       getStatusSpecificStyling(idea.status)
                     )}
                   >
                     <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                      <div className="w-full flex flex-col md:flex-row md:items-center md:justify-between gap-4"> {/* Added w-full */}
                         <CollapsibleTrigger asChild>
                           <Button variant="ghost" className="flex-1 justify-start text-left px-0 text-base items-center min-w-0">
                              <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
-                             <span className="flex-1 font-medium min-w-0 truncate">{idea.text}</span> {/* Added truncate */}
+                             <span className="flex-1 font-medium min-w-0 truncate">{idea.text}</span>
                           </Button>
                         </CollapsibleTrigger>
                          <div className="flex items-center gap-2 flex-shrink-0 md:ml-4">
@@ -333,7 +333,7 @@ export default function ContentIdeasPage() {
                         </div>
                       </div>
                       <CollapsibleContent className="mt-4 pt-4 border-t space-y-3">
-                        <p className="font-semibold text-md mb-3">{idea.text}</p> {/* Display full idea text */}
+                        <p className="font-semibold text-md mb-3 break-words">{idea.text}</p> {/* Added break-words */}
                         {idea.isExpanding && (
                           <div className="flex items-center text-muted-foreground">
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating details...
@@ -451,3 +451,4 @@ export default function ContentIdeasPage() {
     </div>
   );
 }
+
