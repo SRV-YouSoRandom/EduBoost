@@ -18,7 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import PageHeaderTitle from "@/components/common/page-header-title";
 import MarkdownDisplay from "@/components/common/markdown-display";
 import StatusControl from "@/components/common/StatusControl";
-import type { Status, ItemWithIdAndStatus } from "@/types/common"; // Using updated ItemWithIdAndStatus
+import type { Status, ItemWithIdAndStatus } from "@/types/common"; 
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText, TrendingUp, Clock } from "lucide-react";
@@ -38,9 +38,9 @@ const formSchema = z.object({
   websiteUrl: z.string().url("Please enter a valid URL."),
 });
 
-const LOCAL_STORAGE_KEY_LOCAL_SEO = "localSeoResult";
+const PAGE_STORAGE_PREFIX = "localSeoResult";
 
-// ItemType is KeywordItemWithStatus or a simplified KPI item from ItemWithIdAndStatus
+
 const ListWithStatusDisplay: React.FC<{ title: string; items: (KeywordItemWithStatus | ItemWithIdAndStatus)[]; onStatusChange: (itemId: string, newStatus: Status) => void; listType?: 'keywordResearch' | 'kpis' }> = ({ title, items, onStatusChange }) => {
   if (!items || items.length === 0) return <p className="text-muted-foreground">No {title.toLowerCase()} available.</p>;
   
@@ -102,7 +102,6 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
       return <MarkdownDisplay content={data} asCard={false} className="text-sm"/>;
     }
     if (typeof data === 'object' && data !== null) {
-      // Special handling for keywordResearch object
       if (title === "Keyword Research" && 'primaryKeywords' in data && onItemsStatusChange) {
         const keywordData = data as GenerateLocalSEOStrategyOutput['keywordResearch'];
         return (
@@ -114,7 +113,6 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
           </div>
         );
       }
-      // Special handling for Tracking & Reporting KPIs
       if (title === "Tracking & Reporting" && 'kpis' in data && Array.isArray((data as any).kpis) && onItemsStatusChange) {
         const trackingData = data as GenerateLocalSEOStrategyOutput['trackingReporting'];
         return (
@@ -129,13 +127,13 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
           </div>
         );
       }
-      // Generic object rendering
       return (
         <div className="space-y-2">
           {Object.entries(data).map(([key, value]) => {
+            const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
             return (
               <div key={key}>
-                <strong className="capitalize">{key.replace(/([A-Z])/g, ' $1')}: </strong> 
+                <strong className="capitalize">{formattedKey}: </strong> 
                 {renderContent(value as string | Record<string, any>)}
               </div>
             );
@@ -195,6 +193,13 @@ export default function LocalSeoPage() {
     },
   });
 
+  const getCurrentStorageKey = (): string | null => {
+    if (activeInstitution?.id) {
+      return `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}`;
+    }
+    return null;
+  };
+
   useEffect(() => {
     if (activeInstitution) {
       form.reset({
@@ -204,8 +209,6 @@ export default function LocalSeoPage() {
         targetAudience: activeInstitution.targetAudience,
         websiteUrl: activeInstitution.websiteUrl || "",
       });
-      setResult(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_LOCAL_SEO);
     } else {
        form.reset({
         institutionName: "",
@@ -214,33 +217,38 @@ export default function LocalSeoPage() {
         targetAudience: "",
         websiteUrl: "",
       });
+    }
+
+    const key = activeInstitution?.id ? `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}` : null;
+    if (key) {
+      const storedResult = localStorage.getItem(key);
+      if (storedResult) {
+       try {
+        setResult(JSON.parse(storedResult));
+      } catch (error) {
+        console.error(`Failed to parse stored local SEO results for ${key}:`, error);
+        localStorage.removeItem(key);
+        setResult(null);
+      }
+      } else {
+        setResult(null);
+      }
+    } else {
       setResult(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_LOCAL_SEO);
     }
   }, [activeInstitution, form]);
 
   useEffect(() => {
-    const storedResult = localStorage.getItem(LOCAL_STORAGE_KEY_LOCAL_SEO);
-    if (storedResult) {
-       try {
-        setResult(JSON.parse(storedResult));
-      } catch (error) {
-        console.error("Failed to parse stored local SEO results:", error);
-        localStorage.removeItem(LOCAL_STORAGE_KEY_LOCAL_SEO);
-      }
+    const key = getCurrentStorageKey();
+    if (key && result) {
+      localStorage.setItem(key, JSON.stringify(result));
+    } else if (key && !result) {
+      localStorage.removeItem(key);
     }
-  }, []);
-
-  useEffect(() => {
-    if (result) {
-      localStorage.setItem(LOCAL_STORAGE_KEY_LOCAL_SEO, JSON.stringify(result));
-    }
-  }, [result]);
+  }, [result, activeInstitution?.id]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    setResult(null);
-    localStorage.removeItem(LOCAL_STORAGE_KEY_LOCAL_SEO);
     try {
       const data = await generateLocalSEOStrategy(values);
       setResult(data);
@@ -282,7 +290,7 @@ export default function LocalSeoPage() {
       } else if (listType === 'kpis' && updatedResult.trackingReporting) {
         updatedResult.trackingReporting = {
           ...updatedResult.trackingReporting,
-          kpis: mapItems(updatedResult.trackingReporting.kpis) as KeywordItemWithStatus[], // Assuming kpis also conform to KeywordItemWithStatus or similar
+          kpis: mapItems(updatedResult.trackingReporting.kpis) as KeywordItemWithStatus[], 
         };
       }
       return updatedResult;
@@ -390,7 +398,7 @@ export default function LocalSeoPage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" disabled={isLoading} className="w-full md:w-auto">
+              <Button type="submit" disabled={isLoading || !activeInstitution} className="w-full md:w-auto">
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -400,6 +408,7 @@ export default function LocalSeoPage() {
                   "Generate Local SEO Strategy"
                 )}
               </Button>
+               {!activeInstitution && <p className="text-sm text-destructive">Please select or create an institution to generate a strategy.</p>}
             </form>
           </Form>
         </CardContent>

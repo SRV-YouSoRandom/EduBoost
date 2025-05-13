@@ -31,13 +31,13 @@ const formSchema = z.object({
   institutionName: z.string().min(2, "Institution name is required."),
   institutionType: z.string().min(2, "Institution type is required."),
   targetAudience: z.string().min(10, "Target audience description is too short."),
-  programsOffered: z.string().min(10, "Programs offered description is too short."), // Standardized
+  programsOffered: z.string().min(10, "Programs offered description is too short."), 
   location: z.string().min(2, "Location is required."),
   marketingBudget: z.string().min(1, "Marketing budget is required (e.g., $5000, Flexible)."),
   marketingGoals: z.string().min(10, "Marketing goals description is too short."),
 });
 
-const LOCAL_STORAGE_KEY_PERF_MARKETING = "perfMarketingResult";
+const PAGE_STORAGE_PREFIX = "perfMarketingResult";
 
 
 export default function PerformanceMarketingPage() {
@@ -52,12 +52,19 @@ export default function PerformanceMarketingPage() {
       institutionName: "",
       institutionType: "",
       targetAudience: "",
-      programsOffered: "", // Standardized
+      programsOffered: "", 
       location: "",
       marketingBudget: "",
       marketingGoals: "",
     },
   });
+  
+  const getCurrentStorageKey = (): string | null => {
+    if (activeInstitution?.id) {
+      return `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}`;
+    }
+    return null;
+  };
 
   useEffect(() => {
     if (activeInstitution) {
@@ -65,16 +72,13 @@ export default function PerformanceMarketingPage() {
         institutionName: activeInstitution.name,
         institutionType: activeInstitution.type,
         targetAudience: activeInstitution.targetAudience,
-        programsOffered: activeInstitution.programsOffered, // Standardized
+        programsOffered: activeInstitution.programsOffered, 
         location: activeInstitution.location,
-        // marketingBudget and marketingGoals are not part of Institution type, so they remain as is or user fills them.
         marketingBudget: form.getValues("marketingBudget") || "", 
         marketingGoals: form.getValues("marketingGoals") || "",
       });
-      setResult(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
     } else {
-       form.reset({ // Reset to default if no active institution
+       form.reset({ 
         institutionName: "",
         institutionType: "",
         targetAudience: "",
@@ -83,37 +87,40 @@ export default function PerformanceMarketingPage() {
         marketingBudget: "",
         marketingGoals: "",
       });
+    }
+
+    const key = activeInstitution?.id ? `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}` : null;
+    if (key) {
+      const storedResult = localStorage.getItem(key);
+      if (storedResult) {
+        try {
+          setResult(JSON.parse(storedResult));
+        } catch (error) {
+          console.error(`Failed to parse stored perf marketing results for ${key}:`, error);
+          localStorage.removeItem(key);
+          setResult(null);
+        }
+      } else {
+        setResult(null);
+      }
+    } else {
       setResult(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
     }
   }, [activeInstitution, form]);
 
   useEffect(() => {
-    const storedResult = localStorage.getItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
-    if (storedResult) {
-      try {
-        setResult(JSON.parse(storedResult));
-      } catch (error) {
-        console.error("Failed to parse stored perf marketing results:", error);
-        localStorage.removeItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
-      }
+    const key = getCurrentStorageKey();
+    if (key && result) {
+      localStorage.setItem(key, JSON.stringify(result));
+    } else if (key && !result) {
+      localStorage.removeItem(key);
     }
-  }, []);
-
-  useEffect(() => {
-    if (result) {
-      localStorage.setItem(LOCAL_STORAGE_KEY_PERF_MARKETING, JSON.stringify(result));
-    }
-  }, [result]);
+  }, [result, activeInstitution?.id]);
 
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    setResult(null);
-    localStorage.removeItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
     try {
-      // Map form field 'programsOffered' to AI flow's expected 'programmesOffered' if they differ.
-      // However, we standardized to 'programsOffered' in the AI flow as well.
       const data = await generatePerformanceMarketingStrategy(values);
       setResult(data);
       toast({
@@ -202,7 +209,7 @@ export default function PerformanceMarketingPage() {
               />
               <FormField
                 control={form.control}
-                name="programsOffered" // Standardized
+                name="programsOffered" 
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Programs Offered</FormLabel>
@@ -262,7 +269,7 @@ export default function PerformanceMarketingPage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" disabled={isLoading} className="w-full md:w-auto">
+              <Button type="submit" disabled={isLoading || !activeInstitution} className="w-full md:w-auto">
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -272,6 +279,7 @@ export default function PerformanceMarketingPage() {
                   "Generate Performance Marketing Strategy"
                 )}
               </Button>
+              {!activeInstitution && <p className="text-sm text-destructive">Please select or create an institution to generate a strategy.</p>}
             </form>
           </Form>
         </CardContent>

@@ -41,6 +41,8 @@ const ContentIdeaWithStatusSchema = z.object({
   id: z.string().describe('Unique identifier for the content idea.'),
   text: z.string().describe('The content idea text.'),
   status: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the content idea.'),
+  expandedDetails: z.string().optional().describe('Generated detailed script or explanation for the content idea.'),
+  isExpanding: z.boolean().optional().describe('Flag to indicate if details are currently being expanded for this idea.'),
 });
 export type ContentIdeaWithStatus = z.infer<typeof ContentIdeaWithStatusSchema>;
 
@@ -84,9 +86,12 @@ const generateContentIdeasFlow = ai.defineFlow(
         id: crypto.randomUUID(),
         text: ideaText,
         status: 'pending' as Status,
+        expandedDetails: undefined,
+        isExpanding: false,
       }));
       return { contentIdeas: ideasWithStatus };
     }
     return { contentIdeas: [] }; // Fallback or error case
   }
 );
+

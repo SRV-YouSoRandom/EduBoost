@@ -17,15 +17,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import PageHeaderTitle from "@/components/common/page-header-title";
 import StatusControl from "@/components/common/StatusControl";
+import MarkdownDisplay from "@/components/common/markdown-display";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
-import { Loader2, Lightbulb } from "lucide-react";
+import { Loader2, Lightbulb, Sparkles, ChevronsUpDown } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
+import { cn } from "@/lib/utils";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+
 
 import type { GenerateContentIdeasInput, GenerateContentIdeasOutput, ContentIdeaWithStatus } from '@/ai/flows/generate-content-ideas';
 import { generateContentIdeas } from '@/ai/flows/generate-content-ideas';
-import { cn } from "@/lib/utils";
+import { expandContentIdea, ExpandContentIdeaInput } from '@/ai/flows/expand-content-idea';
 
 const formSchema = z.object({
   institutionName: z.string().min(2, "Institution name is required."),
@@ -35,13 +39,15 @@ const formSchema = z.object({
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
 
-const LOCAL_STORAGE_KEY_CONTENT_IDEAS = "contentIdeasResult";
+const PAGE_STORAGE_PREFIX = "contentIdeasResult";
 
 export default function ContentIdeasPage() {
   const { toast } = useToast();
   const { activeInstitution } = useInstitutions();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<GenerateContentIdeasOutput | null>(null);
+  const [openCollapsibles, setOpenCollapsibles] = useState<Record<string, boolean>>({});
+
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -54,6 +60,13 @@ export default function ContentIdeasPage() {
     },
   });
 
+  const getCurrentStorageKey = (): string | null => {
+    if (activeInstitution?.id) {
+      return `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}`;
+    }
+    return null;
+  };
+  
   useEffect(() => {
     if (activeInstitution) {
       form.reset({
@@ -63,44 +76,56 @@ export default function ContentIdeasPage() {
         programsOffered: activeInstitution.programsOffered,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       });
-      // Clear previous results when institution changes
-      setResult(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS);
     } else {
-       form.reset({ // Reset to default if no active institution
+       form.reset({ 
         institutionName: "",
         institutionType: "",
         targetAudience: "",
         programsOffered: "",
         uniqueSellingPoints: "",
       });
-      setResult(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS);
     }
+    // Load from localStorage when activeInstitution changes
+    const key = activeInstitution?.id ? `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}` : null;
+    if (key) {
+      const storedResult = localStorage.getItem(key);
+      if (storedResult) {
+        try {
+          setResult(JSON.parse(storedResult));
+        } catch (error) {
+          console.error(`Failed to parse stored content ideas for ${key}:`, error);
+          localStorage.removeItem(key);
+          setResult(null);
+        }
+      } else {
+        setResult(null); // No stored result for this institution
+      }
+    } else {
+      setResult(null); // No active institution
+    }
+    setOpenCollapsibles({}); // Reset open states when institution changes
   }, [activeInstitution, form]);
 
-  useEffect(() => {
-    const storedResult = localStorage.getItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS);
-    if (storedResult) {
-      try {
-        setResult(JSON.parse(storedResult));
-      } catch (error) {
-        console.error("Failed to parse stored content ideas:", error);
-        localStorage.removeItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS);
-      }
-    }
-  }, []);
 
   useEffect(() => {
-    if (result) {
-      localStorage.setItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS, JSON.stringify(result));
+    const key = getCurrentStorageKey();
+    if (key && result) {
+      localStorage.setItem(key, JSON.stringify(result));
+    } else if (key && !result) {
+      // If result is nullified for an active institution, remove its stored data
+      localStorage.removeItem(key);
     }
-  }, [result]);
+  }, [result, activeInstitution?.id]);
+
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    setResult(null);
-    localStorage.removeItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS); 
+    // No need to setResult(null) here if we want to show old results while loading new ones.
+    // Or, if we prefer a clean slate:
+    // setResult(null); 
+    // const key = getCurrentStorageKey();
+    // if (key) localStorage.removeItem(key);
+
     try {
       const data = await generateContentIdeas(values);
       setResult(data);
@@ -129,12 +154,58 @@ export default function ContentIdeasPage() {
       return { ...prevResult, contentIdeas: updatedIdeas };
     });
   };
-  
-  const statusIconMap: Record<Status, React.ElementType> = {
-    pending: Lightbulb, // Placeholder, actual icon from StatusControl
-    inProgress: Loader2,
-    done: Lightbulb, // Placeholder
-    rejected: Lightbulb, // Placeholder
+
+  const handleExpandIdea = async (ideaId: string) => {
+    const ideaToExpand = result?.contentIdeas.find(idea => idea.id === ideaId);
+    if (!ideaToExpand || !activeInstitution) return;
+
+    setResult(prev => prev ? ({
+      ...prev,
+      contentIdeas: prev.contentIdeas.map(idea => 
+        idea.id === ideaId ? { ...idea, isExpanding: true } : idea
+      ),
+    }) : null);
+
+    try {
+      const institutionContext: GenerateContentIdeasInput = {
+        institutionName: activeInstitution.name,
+        institutionType: activeInstitution.type,
+        targetAudience: activeInstitution.targetAudience,
+        programsOffered: activeInstitution.programsOffered,
+        uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
+      };
+      const expansionInput: ExpandContentIdeaInput = {
+        ideaText: ideaToExpand.text,
+        institutionContext: institutionContext,
+      };
+      const expansionResult = await expandContentIdea(expansionInput);
+      
+      setResult(prev => prev ? ({
+        ...prev,
+        contentIdeas: prev.contentIdeas.map(idea =>
+          idea.id === ideaId 
+            ? { ...idea, expandedDetails: expansionResult.expandedDetails, isExpanding: false } 
+            : idea
+        ),
+      }) : null);
+      toast({
+        title: "Idea Expanded!",
+        description: "Details have been generated for the content idea.",
+      });
+    } catch (error) {
+      console.error("Error expanding content idea:", error);
+      toast({
+        title: "Error Expanding Idea",
+        description: (error as Error).message || "Could not expand the content idea.",
+        variant: "destructive",
+      });
+      setResult(prev => prev ? ({
+        ...prev,
+        contentIdeas: prev.contentIdeas.map(idea =>
+          idea.id === ideaId ? { ...idea, isExpanding: false } : idea
+        ),
+      }) : null);
+    }
   };
   
   const getStatusSpecificStyling = (status: Status) => {
@@ -146,6 +217,10 @@ export default function ContentIdeasPage() {
       default:
         return '';
     }
+  };
+
+  const toggleCollapsible = (id: string) => {
+    setOpenCollapsibles(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
 
@@ -244,7 +319,7 @@ export default function ContentIdeasPage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" disabled={isLoading} className="w-full md:w-auto">
+              <Button type="submit" disabled={isLoading || !activeInstitution} className="w-full md:w-auto">
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -254,6 +329,7 @@ export default function ContentIdeasPage() {
                   "Generate Content Ideas"
                 )}
               </Button>
+               {!activeInstitution && <p className="text-sm text-destructive">Please select or create an institution to generate ideas.</p>}
             </form>
           </Form>
         </CardContent>
@@ -270,24 +346,58 @@ export default function ContentIdeasPage() {
         <Card className="mt-6 shadow-lg">
           <CardHeader>
             <CardTitle>Generated Content Ideas</CardTitle>
-            <CardDescription>Manage the status of your generated content ideas below.</CardDescription>
+            <CardDescription>Manage the status of your generated content ideas below. Click to expand for details.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-4">
+            <ul className="space-y-2">
               {result.contentIdeas.map((idea: ContentIdeaWithStatus) => (
                 <li 
                   key={idea.id} 
                   className={cn(
-                    "flex flex-col md:flex-row md:items-center md:justify-between p-4 rounded-lg border bg-card gap-4",
+                    "p-4 rounded-lg border bg-card",
                     getStatusSpecificStyling(idea.status)
                   )}
                 >
-                  <span className="flex-1">{idea.text}</span>
-                  <StatusControl
-                    currentStatus={idea.status}
-                    onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
-                    size="sm"
-                  />
+                  <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" className="flex-1 justify-start text-left px-0 hover:bg-transparent">
+                           <ChevronsUpDown className="mr-2 h-4 w-4 flex-shrink-0" />
+                           <span className="flex-1">{idea.text}</span>
+                        </Button>
+                      </CollapsibleTrigger>
+                       <div className="flex items-center gap-2 flex-shrink-0 md:ml-4">
+                        {!idea.expandedDetails && !idea.isExpanding && (
+                           <Button variant="outline" size="sm" onClick={() => handleExpandIdea(idea.id)} disabled={!activeInstitution}>
+                             <Sparkles className="mr-2 h-4 w-4" /> Get Details
+                           </Button>
+                         )}
+                         {idea.isExpanding && (
+                           <Button variant="outline" size="sm" disabled>
+                             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Expanding...
+                           </Button>
+                         )}
+                        <StatusControl
+                          currentStatus={idea.status}
+                          onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
+                          size="sm"
+                        />
+                      </div>
+                    </div>
+                    <CollapsibleContent className="mt-3 pt-3 border-t">
+                      {idea.expandedDetails ? (
+                        <>
+                          <MarkdownDisplay content={idea.expandedDetails} asCard={false} />
+                           <Button variant="link" size="sm" onClick={() => handleExpandIdea(idea.id)} className="mt-2 text-primary" disabled={idea.isExpanding || !activeInstitution}>
+                             {idea.isExpanding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                             Re-generate Details
+                           </Button>
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Click "Get Details" to generate more information for this idea.</p>
+                      )}
+                    </CollapsibleContent>
+                  </Collapsible>
                 </li>
               ))}
             </ul>

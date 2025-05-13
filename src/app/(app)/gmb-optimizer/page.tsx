@@ -39,7 +39,7 @@ const formSchema = z.object({
 
 type GMBSectionKey = 'descriptionSuggestions' | 'optimizationTips' | 'keywordSuggestionsSection';
 
-const LOCAL_STORAGE_KEY_GMB_OPTIMIZER = "gmbOptimizerResult";
+const PAGE_STORAGE_PREFIX = "gmbOptimizerResult";
 
 const KeywordListDisplay: React.FC<{ items: GMBKeywordSuggestion[]; onStatusChange: (itemId: string, newStatus: Status) => void; }> = ({ items, onStatusChange }) => {
   if (!items || items.length === 0) return <p className="text-muted-foreground">No keyword suggestions available.</p>;
@@ -108,6 +108,13 @@ export default function GmbOptimizerPage() {
     },
   });
 
+  const getCurrentStorageKey = (): string | null => {
+    if (activeInstitution?.id) {
+      return `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}`;
+    }
+    return null;
+  };
+
   useEffect(() => {
     if (activeInstitution) {
       form.reset({
@@ -118,8 +125,6 @@ export default function GmbOptimizerPage() {
         targetAudience: activeInstitution.targetAudience,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       });
-      setResult(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
     } else {
       form.reset({
         institutionName: "",
@@ -129,34 +134,39 @@ export default function GmbOptimizerPage() {
         targetAudience: "",
         uniqueSellingPoints: "",
       });
+    }
+    
+    const key = activeInstitution?.id ? `${PAGE_STORAGE_PREFIX}_${activeInstitution.id}` : null;
+    if (key) {
+      const storedResult = localStorage.getItem(key);
+      if (storedResult) {
+        try {
+          setResult(JSON.parse(storedResult));
+        } catch (error) {
+          console.error(`Failed to parse stored GMB results for ${key}:`, error);
+          localStorage.removeItem(key);
+          setResult(null);
+        }
+      } else {
+        setResult(null);
+      }
+    } else {
       setResult(null);
-      localStorage.removeItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
     }
   }, [activeInstitution, form]);
   
   useEffect(() => {
-    const storedResult = localStorage.getItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
-    if (storedResult) {
-      try {
-        setResult(JSON.parse(storedResult));
-      } catch (error) {
-        console.error("Failed to parse stored GMB results:", error);
-        localStorage.removeItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
-      }
+    const key = getCurrentStorageKey();
+    if (key && result) {
+      localStorage.setItem(key, JSON.stringify(result));
+    } else if (key && !result) {
+      localStorage.removeItem(key);
     }
-  }, []);
-
-  useEffect(() => {
-    if (result) {
-      localStorage.setItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER, JSON.stringify(result));
-    }
-  }, [result]);
+  }, [result, activeInstitution?.id]);
 
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    setResult(null);
-    localStorage.removeItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
     try {
       const data = await generateGMBOptimizations(values);
       setResult(data);
@@ -179,7 +189,6 @@ export default function GmbOptimizerPage() {
   const handleSectionStatusChange = (sectionKey: GMBSectionKey, newStatus: Status) => {
     setResult(prevResult => {
       if (!prevResult) return null;
-      // For GMBSectionKey that ends with 'SectionStatus', map to the correct field in GenerateGMBOptimizationsOutput
       const statusFieldKey = `${sectionKey}Status` as keyof GenerateGMBOptimizationsOutput;
       return {
         ...prevResult,
@@ -307,7 +316,7 @@ export default function GmbOptimizerPage() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" disabled={isLoading} className="w-full md:w-auto">
+              <Button type="submit" disabled={isLoading || !activeInstitution} className="w-full md:w-auto">
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -317,6 +326,7 @@ export default function GmbOptimizerPage() {
                   "Generate GMB Optimizations"
                 )}
               </Button>
+              {!activeInstitution && <p className="text-sm text-destructive">Please select or create an institution to generate optimizations.</p>}
             </form>
           </Form>
         </CardContent>
@@ -335,7 +345,7 @@ export default function GmbOptimizerPage() {
             <CardHeader className="flex flex-row justify-between items-center">
                <CardTitle className="flex items-center"><SearchCheck className="mr-2 h-6 w-6 text-primary" />Keyword Suggestions</CardTitle>
               <StatusControl
-                currentStatus={result.keywordSuggestionsSectionStatus} // Status for the whole section
+                currentStatus={result.keywordSuggestionsSectionStatus} 
                 onStatusChange={(newStatus) => handleSectionStatusChange('keywordSuggestionsSection', newStatus)}
               />
             </CardHeader>
