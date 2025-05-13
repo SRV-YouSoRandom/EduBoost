@@ -21,7 +21,7 @@ import MarkdownDisplay from "@/components/common/markdown-display";
 import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
-import { Loader2, Lightbulb, Sparkles, ChevronsUpDown } from "lucide-react";
+import { Loader2, Lightbulb, Sparkles, ChevronsUpDown, Wand2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -44,7 +44,7 @@ const PAGE_STORAGE_PREFIX = "contentIdeasResult";
 export default function ContentIdeasPage() {
   const { toast } = useToast();
   const { activeInstitution } = useInstitutions();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // For generating new list
   const [result, setResult] = useState<GenerateContentIdeasOutput | null>(null);
   const [openCollapsibles, setOpenCollapsibles] = useState<Record<string, boolean>>({});
 
@@ -76,34 +76,29 @@ export default function ContentIdeasPage() {
         programsOffered: activeInstitution.programsOffered,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       });
-    } else {
-       form.reset({ 
-        institutionName: "",
-        institutionType: "",
-        targetAudience: "",
-        programsOffered: "",
-        uniqueSellingPoints: "",
-      });
-    }
-    
-    const key = getCurrentStorageKey();
-    if (key) {
-      const storedResult = localStorage.getItem(key);
-      if (storedResult) {
-        try {
-          setResult(JSON.parse(storedResult));
-        } catch (error) {
-          console.error(`Failed to parse stored content ideas for ${key}:`, error);
-          localStorage.removeItem(key); // Clear corrupted data
-          setResult(null);
+      const key = getCurrentStorageKey();
+      if (key) {
+        const storedResult = localStorage.getItem(key);
+        if (storedResult) {
+          try {
+            setResult(JSON.parse(storedResult));
+          } catch (error) {
+            console.error(`Failed to parse stored content ideas for ${key}:`, error);
+            localStorage.removeItem(key); 
+            setResult(null);
+          }
+        } else {
+          setResult(null); 
         }
-      } else {
-        setResult(null); // No stored result for this institution
       }
     } else {
-      setResult(null); // No active institution
+       form.reset({ 
+        institutionName: "", institutionType: "", targetAudience: "",
+        programsOffered: "", uniqueSellingPoints: "",
+      });
+      setResult(null); 
     }
-    setOpenCollapsibles({}); // Reset open states when institution changes
+    setOpenCollapsibles({}); 
   }, [activeInstitution, form]);
 
 
@@ -119,10 +114,11 @@ export default function ContentIdeasPage() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    // setResult(null); // Optional: Clears previous results from UI immediately
+    // When generating a new list, previous results are replaced.
+    // setResult(null); // Explicitly clear if you want loading state to show "generating new" vs "loading old"
     try {
       const data = await generateContentIdeas(values);
-      setResult(data); // This will trigger the useEffect to save to localStorage
+      setResult(data); 
       toast({
         title: "Content Ideas Generated!",
         description: "A fresh batch of content ideas has been successfully created for you.",
@@ -134,8 +130,6 @@ export default function ContentIdeasPage() {
         description: (error as Error).message || "Could not generate content ideas. Please try again.",
         variant: "destructive",
       });
-      // Optionally clear results on error or keep showing old ones
-      // setResult(null);
     } finally {
       setIsLoading(false);
     }
@@ -165,7 +159,7 @@ export default function ContentIdeasPage() {
     setResult(prev => prev ? ({
       ...prev,
       contentIdeas: prev.contentIdeas.map(idea => 
-        idea.id === ideaId ? { ...idea, isExpanding: true } : idea
+        idea.id === ideaId ? { ...idea, isExpanding: true, expandedDetails: isRegeneration ? undefined : idea.expandedDetails } : idea // Clear old details if regenerating
       ),
     }) : null);
 
@@ -193,8 +187,10 @@ export default function ContentIdeasPage() {
       }) : null);
       toast({
         title: isRegeneration ? "Details Re-generated!" : "Idea Expanded!",
-        description: "Details have been successfully generated for the content idea.",
+        description: "Details have been successfully generated for the content idea. Check the expanded section.",
       });
+      // Ensure the collapsible for this item is open after expansion
+      setOpenCollapsibles(prev => ({ ...prev, [ideaId]: true }));
     } catch (error) {
       console.error("Error expanding content idea:", error);
       toast({
@@ -231,7 +227,7 @@ export default function ContentIdeasPage() {
     <div className="space-y-8">
       <PageHeaderTitle
         title="AI Content Idea Generator"
-        description="Fuel your content strategy with AI-generated ideas tailored to your institution."
+        description="Fuel your content strategy with AI-generated ideas tailored to your institution. Expand ideas for more details."
         icon={Lightbulb}
       />
 
@@ -244,112 +240,34 @@ export default function ContentIdeasPage() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
-                  control={form.control}
-                  name="institutionName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Institution Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Future Innovators Academy" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="institutionType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Institution Type</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., K-12 School, Online Coding Bootcamp" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input placeholder="e.g., Future Innovators Academy" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={form.control} name="institutionType" render={({ field }) => (<FormItem><FormLabel>Institution Type</FormLabel><FormControl><Input placeholder="e.g., K-12 School" {...field} /></FormControl><FormMessage /></FormItem>)} />
               </div>
-              <FormField
-                control={form.control}
-                name="targetAudience"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Target Audience</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Who is this content for? (e.g., prospective students, parents, alumni, industry partners)..."
-                        className="min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="programsOffered"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Programs Offered</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Describe key programs, courses, or areas of study..."
-                        className="min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="uniqueSellingPoints"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Unique Selling Points</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="What makes your institution special? (e.g., focus on project-based learning, strong career services, unique campus culture)..."
-                        className="min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem><FormLabel>Target Audience</FormLabel><FormControl><Textarea placeholder="Who is this content for?" className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem><FormLabel>Programs Offered</FormLabel><FormControl><Textarea placeholder="Describe key programs..." className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <FormField control={form.control} name="uniqueSellingPoints" render={({ field }) => (<FormItem><FormLabel>Unique Selling Points</FormLabel><FormControl><Textarea placeholder="What makes your institution special?" className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
               <Button type="submit" disabled={isLoading || !activeInstitution} className="w-full md:w-auto">
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generating Ideas...
-                  </>
-                ) : (
-                  "Generate Content Ideas"
-                )}
+                {isLoading ? ( <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                ) : result && result.contentIdeas.length > 0 ? "Re-generate Content Ideas" : "Generate Content Ideas"}
               </Button>
-               {!activeInstitution && <p className="text-sm text-destructive">Please select or create an institution to generate ideas.</p>}
+               {!activeInstitution && <p className="text-sm text-destructive mt-2">Please select or create an institution to generate ideas.</p>}
             </form>
           </Form>
         </CardContent>
       </Card>
 
-      {isLoading && !result && (
-        <div className="text-center py-4">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-          <p className="mt-2 text-muted-foreground">Brainstorming content ideas for you...</p>
+      {isLoading && ( // Show spinner if actively generating new list
+        <div className="text-center py-10">
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+          <p className="mt-4 text-lg text-muted-foreground">Brainstorming content ideas for you...</p>
         </div>
       )}
 
-      {result && result.contentIdeas && result.contentIdeas.length > 0 && (
+      {!isLoading && result && result.contentIdeas && result.contentIdeas.length > 0 && (
         <Card className="mt-6 shadow-lg">
           <CardHeader>
             <CardTitle>Generated Content Ideas</CardTitle>
-            <CardDescription>Manage the status of your generated content ideas below. Click to expand for details.</CardDescription>
+            <CardDescription>Manage status and expand ideas for details like scripts or outlines. Click an idea to see more.</CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2">
@@ -364,22 +282,12 @@ export default function ContentIdeasPage() {
                   <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                       <CollapsibleTrigger asChild>
-                        <Button variant="ghost" className="flex-1 justify-start text-left px-0 hover:bg-transparent">
-                           <ChevronsUpDown className="mr-2 h-4 w-4 flex-shrink-0" />
-                           <span className="flex-1">{idea.text}</span>
+                        <Button variant="ghost" className="flex-1 justify-start text-left px-0 hover:bg-transparent text-base">
+                           <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
+                           <span className="flex-1 font-medium">{idea.text}</span>
                         </Button>
                       </CollapsibleTrigger>
                        <div className="flex items-center gap-2 flex-shrink-0 md:ml-4">
-                        {!idea.expandedDetails && !idea.isExpanding && (
-                           <Button variant="outline" size="sm" onClick={() => handleExpandIdea(idea.id, false)} disabled={!activeInstitution}>
-                             <Sparkles className="mr-2 h-4 w-4" /> Get Details
-                           </Button>
-                         )}
-                         {idea.isExpanding && (
-                           <Button variant="outline" size="sm" disabled>
-                             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Expanding...
-                           </Button>
-                         )}
                         <StatusControl
                           currentStatus={idea.status}
                           onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
@@ -387,18 +295,29 @@ export default function ContentIdeasPage() {
                         />
                       </div>
                     </div>
-                    <CollapsibleContent className="mt-3 pt-3 border-t">
-                      {idea.expandedDetails ? (
+                    <CollapsibleContent className="mt-4 pt-4 border-t space-y-3">
+                      {idea.isExpanding && (
+                        <div className="flex items-center text-muted-foreground">
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating details...
+                        </div>
+                      )}
+                      {!idea.isExpanding && idea.expandedDetails && (
                         <>
                           <MarkdownDisplay content={idea.expandedDetails} asCard={false} />
-                           <Button variant="link" size="sm" onClick={() => handleExpandIdea(idea.id, true)} className="mt-2 text-primary" disabled={idea.isExpanding || !activeInstitution}>
-                             {idea.isExpanding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                           <Button variant="outline" size="sm" onClick={() => handleExpandIdea(idea.id, true)} className="mt-2 text-primary border-primary hover:bg-primary/10" disabled={idea.isExpanding || !activeInstitution}>
+                             {idea.isExpanding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
                              Re-generate Details
                            </Button>
                         </>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Click "Get Details" to generate more information for this idea.</p>
                       )}
+                       {!idea.isExpanding && !idea.expandedDetails && (
+                        <div className="text-center py-2">
+                          <p className="text-sm text-muted-foreground mb-2">No details generated yet for this idea.</p>
+                          <Button variant="default" size="sm" onClick={() => handleExpandIdea(idea.id, false)} disabled={!activeInstitution}>
+                            <Sparkles className="mr-2 h-4 w-4" /> Get Details / Script
+                          </Button>
+                        </div>
+                       )}
                     </CollapsibleContent>
                   </Collapsible>
                 </li>
@@ -407,16 +326,25 @@ export default function ContentIdeasPage() {
           </CardContent>
         </Card>
       )}
-       {result && result.contentIdeas && result.contentIdeas.length === 0 && !isLoading && (
+       {/* Message if no data could be generated OR if no data has been loaded/generated yet */}
+       {!isLoading && result && result.contentIdeas && result.contentIdeas.length === 0 && (
         <Card className="mt-6 shadow-lg">
           <CardHeader>
-            <CardTitle>No Content Ideas Generated</CardTitle>
+            <CardTitle>No Content Ideas</CardTitle>
           </CardHeader>
           <CardContent>
-            <p>The AI could not generate content ideas based on the provided input. Please try refining your input or try again later. If you had a previously saved strategy, it might have been cleared.</p>
+            <p>No content ideas have been generated for {activeInstitution ? activeInstitution.name : "this institution"} yet, or the AI could not generate ideas based on the current input. Please try refining your input or use the form above to generate ideas.</p>
           </CardContent>
         </Card>
       )}
+      {!isLoading && !result && activeInstitution && (
+         <Card className="mt-6 shadow-lg">
+           <CardHeader><CardTitle>No Content Ideas Available</CardTitle></CardHeader>
+           <CardContent>
+             <p>No content ideas have been generated for {activeInstitution.name} yet. Please use the form above to generate them.</p>
+           </CardContent>
+         </Card>
+       )}
     </div>
   );
 }

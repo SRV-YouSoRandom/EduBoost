@@ -14,7 +14,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import type { Status, ItemWithIdAndStatus } from '@/types/common'; // ItemWithIdAndStatus will be used
 
-const GenerateLocalSEOStrategyInputSchema = z.object({
+export const GenerateLocalSEOStrategyInputSchema = z.object({
   institutionName: z.string().describe('The name of the educational institution.'),
   location: z.string().describe('The location of the institution (city, state).'),
   programsOffered: z.string().describe('A description of the programs offered by the institution.'),
@@ -29,7 +29,7 @@ export type GenerateLocalSEOStrategyInput = z.infer<
 // Re-using ItemWithIdAndStatus from common types by extending it in the output if needed,
 // or ensuring the AI prompt output schema aligns for easy mapping.
 // Here, ItemWithStatusSchema is defined locally but aligns with ItemWithIdAndStatus + search volumes.
-const KeywordItemWithStatusSchema = z.object({
+export const KeywordItemWithStatusSchema = z.object({
   id: z.string().describe('Unique identifier for the item.'),
   text: z.string().describe('The text content of the item.'),
   status: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the item.'),
@@ -46,7 +46,7 @@ const KeywordResearchSchema = z.object({
   toolsMention: z.string().describe("Brief mention of tools like Google Keyword Planner and Google Trends.").optional(),
 });
 
-const GMBOptimizationSchema = z.object({
+export const GMBOptimizationSchema = z.object({
   profileCompleteness: z.string().describe("Stress the importance of a 100% complete GMB profile."),
   napConsistency: z.string().describe("Emphasize consistent Name, Address, Phone number (NAP)."),
   categories: z.string().describe("Recommend accurate primary and secondary GMB categories."),
@@ -57,7 +57,7 @@ const GMBOptimizationSchema = z.object({
   reviewsStrategy: z.string().describe("Outline strategies for ethically encouraging and responding to reviews."),
 });
 
-const OnPageSEOSchema = z.object({
+export const OnPageSEOSchema = z.object({
   localizedContent: z.string().describe("Recommend creating location-specific pages or content."),
   titleTagsMetaDescriptions: z.string().describe("Guide on optimizing title tags and meta descriptions with local keywords."),
   headerTags: z.string().describe("Explain how to use H1-H6 headers with local keywords."),
@@ -65,14 +65,14 @@ const OnPageSEOSchema = z.object({
   localBusinessSchema: z.string().describe("Strongly recommend implementing LocalBusiness schema markup, provide example snippet guidance."),
 });
 
-const LocalLinkBuildingSchema = z.object({
+export const LocalLinkBuildingSchema = z.object({
   localDirectories: z.string().describe("Suggest relevant local and niche directories."),
   communityPartnerships: z.string().describe("Recommend partnerships with local organizations for backlinks."),
   guestPosting: z.string().describe("Suggest guest posting on local blogs or educational sites."),
   sponsorships: z.string().describe("Mention local event sponsorships for link opportunities."),
 });
 
-const TechnicalLocalSEOSchema = z.object({
+export const TechnicalLocalSEOSchema = z.object({
   mobileFriendliness: z.string().describe("Stress importance (mention Google's Mobile-Friendly Test)."),
   siteSpeed: z.string().describe("Advise on optimizing site speed (mention Google PageSpeed Insights)."),
   citationsNapConsistencyCheck: z.string().describe("Reiterate checking and correcting NAP consistency."),
@@ -84,7 +84,7 @@ const TrackingReportingSchema = z.object({
   kpis: z.array(KeywordItemWithStatusSchema).describe("Suggest KPIs like local pack rankings, GMB engagement, organic traffic from target location, each with status."), // Reusing KeywordItemWithStatusSchema for similar structure for KPIs.
 });
 
-const GenerateLocalSEOStrategyOutputSchema = z.object({
+export const GenerateLocalSEOStrategyOutputSchema = z.object({
   executiveSummary: z.string().describe("Briefly summarize the proposed local SEO strategy."),
   keywordResearch: KeywordResearchSchema,
   gmbOptimization: GMBOptimizationSchema,
@@ -106,7 +106,7 @@ const AIKeywordSchema = z.object({
   searchVolumeLast7d: z.string().optional().describe('Estimated search volume in the last 7 days for the given location. (e.g., "approx 350 searches", "medium", "data unavailable")'),
 });
 
-const AIKeywordResearchSchema = z.object({
+export const AIKeywordResearchSchema = z.object({ // Exported for reuse in refinement flow
   primaryKeywords: z.array(AIKeywordSchema).describe("List of 3-5 core local keywords with estimated search volumes."),
   secondaryKeywords: z.array(AIKeywordSchema).describe("List of 5-7 related keywords with estimated search volumes."),
   longTailKeywords: z.array(AIKeywordSchema).describe("List of 3-5 examples of long-tail keywords with estimated search volumes."),
@@ -117,7 +117,7 @@ const AIKpiSchema = z.object({ // KPIs also have text, but not search volume.
   text: z.string().describe('The KPI description.')
 });
 
-const AITrackingReportingSchema = z.object({
+export const AITrackingReportingSchema = z.object({ // Exported for reuse in refinement flow
   googleAnalytics: z.string(),
   googleSearchConsole: z.string(),
   kpis: z.array(AIKpiSchema).describe("Suggest KPIs..."),
@@ -181,7 +181,7 @@ const prompt = ai.definePrompt({
   `,
 });
 
-const mapAiKeywordsToItemsWithStatus = (aiKeywords: z.infer<typeof AIKeywordSchema>[]): KeywordItemWithStatus[] => {
+export const mapAiKeywordsToItemsWithStatus = (aiKeywords: z.infer<typeof AIKeywordSchema>[]): KeywordItemWithStatus[] => {
   return aiKeywords.map(keyword => ({
     id: crypto.randomUUID(),
     text: keyword.text,
@@ -191,7 +191,7 @@ const mapAiKeywordsToItemsWithStatus = (aiKeywords: z.infer<typeof AIKeywordSche
   }));
 };
 
-const mapAiKpisToItemsWithStatus = (aiKpis: z.infer<typeof AIKpiSchema>[]): KeywordItemWithStatus[] => {
+export const mapAiKpisToItemsWithStatus = (aiKpis: z.infer<typeof AIKpiSchema>[]): KeywordItemWithStatus[] => {
   return aiKpis.map(kpi => ({
     id: crypto.randomUUID(),
     text: kpi.text,
@@ -210,7 +210,17 @@ const generateLocalSEOStrategyFlow = ai.defineFlow(
     const {output: aiOutput} = await prompt(input);
     if (!aiOutput) {
       console.error("AI failed to generate valid structured output for Local SEO Strategy.");
-      throw new Error("Failed to generate local SEO strategy. The AI model did not return the expected data structure.");
+      // Return a structured error object matching the schema
+      return {
+        executiveSummary: "Error: Failed to generate executive summary.",
+        keywordResearch: { primaryKeywords: [], secondaryKeywords: [], longTailKeywords: [], toolsMention: "N/A" },
+        gmbOptimization: { profileCompleteness: "Error", napConsistency: "Error", categories: "Error", servicesProducts: "Error", photosVideos: "Error", gmbPosts: "Error", qaSection: "Error", reviewsStrategy: "Error" },
+        onPageLocalSEO: { localizedContent: "Error", titleTagsMetaDescriptions: "Error", headerTags: "Error", imageOptimization: "Error", localBusinessSchema: "Error" },
+        localLinkBuilding: { localDirectories: "Error", communityPartnerships: "Error", guestPosting: "Error", sponsorships: "Error" },
+        technicalLocalSEO: { mobileFriendliness: "Error", siteSpeed: "Error", citationsNapConsistencyCheck: "Error" },
+        trackingReporting: { googleAnalytics: "Error", googleSearchConsole: "Error", kpis: [] },
+        conclusion: "Error: Failed to generate conclusion.",
+      };
     }
 
     return {

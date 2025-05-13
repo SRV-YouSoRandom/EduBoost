@@ -21,13 +21,14 @@ import StatusControl from "@/components/common/StatusControl";
 import type { Status, ItemWithIdAndStatus } from "@/types/common"; 
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
-import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText, TrendingUp, Clock } from "lucide-react";
+import { Loader2, MapPin, SearchCheck, ListChecks, Link2, Settings2, Presentation, Target, FileText, TrendingUp, Clock, Wand2 } from "lucide-react";
 import { useInstitutions } from "@/contexts/InstitutionContext";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { cn } from "@/lib/utils";
 
 import type { GenerateLocalSEOStrategyInput, GenerateLocalSEOStrategyOutput, KeywordItemWithStatus } from '@/ai/flows/generate-local-seo-strategy';
 import { generateLocalSEOStrategy } from '@/ai/flows/generate-local-seo-strategy';
+import { refineLocalSEOStrategy, RefineLocalSEOStrategyInput } from '@/ai/flows/refine-local-seo-strategy';
 
 
 const formSchema = z.object({
@@ -117,8 +118,8 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
         const trackingData = data as GenerateLocalSEOStrategyOutput['trackingReporting'];
         return (
           <div className="space-y-4">
-            {trackingData.googleAnalytics && <p><strong>Google Analytics:</strong> {trackingData.googleAnalytics}</p>}
-            {trackingData.googleSearchConsole && <p><strong>Google Search Console:</strong> {trackingData.googleSearchConsole}</p>}
+            {trackingData.googleAnalytics && <p><strong>Google Analytics:</strong> <MarkdownDisplay content={trackingData.googleAnalytics} asCard={false} className="text-sm inline" /></p>}
+            {trackingData.googleSearchConsole && <p><strong>Google Search Console:</strong> <MarkdownDisplay content={trackingData.googleSearchConsole} asCard={false} className="text-sm inline" /></p>}
             <ListWithStatusDisplay 
               title="Key Performance Indicators (KPIs)" 
               items={trackingData.kpis || []} 
@@ -131,10 +132,22 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
         <div className="space-y-2">
           {Object.entries(data).map(([key, value]) => {
             const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-            return (
+            // Check if value is a string before rendering with MarkdownDisplay
+            if (typeof value === 'string') {
+              return (
+                <div key={key}>
+                  <strong className="capitalize">{formattedKey}: </strong> 
+                  <MarkdownDisplay content={value} asCard={false} className="text-sm inline"/>
+                </div>
+              );
+            }
+            // If it's not a string, and not an object (which would be handled by recursion if needed), render as is or handle specifically.
+            // For simplicity, this example will skip non-string, non-object values or you could stringify them.
+            // For nested objects, the recursion in renderContent would handle it if the structure was deeper.
+             return (
               <div key={key}>
                 <strong className="capitalize">{formattedKey}: </strong> 
-                {renderContent(value as string | Record<string, any>)}
+                 {typeof value === 'object' ? renderContent(value as Record<string, any>) : String(value)}
               </div>
             );
           })}
@@ -179,8 +192,10 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
 export default function LocalSeoPage() {
   const { toast } = useToast();
   const { activeInstitution } = useInstitutions();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // For initial generation
+  const [isRefining, setIsRefining] = useState(false); // For refinement
   const [result, setResult] = useState<GenerateLocalSEOStrategyOutput | null>(null);
+  const [refinementPrompt, setRefinementPrompt] = useState("");
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -200,6 +215,7 @@ export default function LocalSeoPage() {
     return null;
   };
 
+  // Effect for loading/resetting form and loading stored result
   useEffect(() => {
     if (activeInstitution) {
       form.reset({
@@ -209,50 +225,47 @@ export default function LocalSeoPage() {
         targetAudience: activeInstitution.targetAudience,
         websiteUrl: activeInstitution.websiteUrl || "",
       });
+      const key = getCurrentStorageKey();
+      if (key) {
+        const storedResult = localStorage.getItem(key);
+        if (storedResult) {
+          try {
+            setResult(JSON.parse(storedResult));
+          } catch (error) {
+            console.error(`Failed to parse stored local SEO results for ${key}:`, error);
+            localStorage.removeItem(key);
+            setResult(null);
+          }
+        } else {
+          setResult(null);
+        }
+      }
     } else {
-       form.reset({
-        institutionName: "",
-        location: "",
-        programsOffered: "",
-        targetAudience: "",
-        websiteUrl: "",
+      form.reset({
+        institutionName: "", location: "", programsOffered: "",
+        targetAudience: "", websiteUrl: "",
       });
-    }
-
-    const key = getCurrentStorageKey();
-    if (key) {
-      const storedResult = localStorage.getItem(key);
-      if (storedResult) {
-       try {
-        setResult(JSON.parse(storedResult));
-      } catch (error) {
-        console.error(`Failed to parse stored local SEO results for ${key}:`, error);
-        localStorage.removeItem(key); // Clear corrupted data
-        setResult(null);
-      }
-      } else {
-        setResult(null); // No stored result for this institution
-      }
-    } else {
-      setResult(null); // No active institution
+      setResult(null);
     }
   }, [activeInstitution, form]);
 
+  // Effect for saving result to localStorage
   useEffect(() => {
     const key = getCurrentStorageKey();
     if (key && result) {
       localStorage.setItem(key, JSON.stringify(result));
-    } else if (key && !result) {
+    } else if (key && !result) { // If result becomes null (e.g. after starting over)
       localStorage.removeItem(key);
     }
   }, [result, activeInstitution?.id]);
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
+
+  async function onInitialSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    // setResult(null); // Optional: Clears previous results from UI immediately
+    setResult(null); // Clear previous results when generating a new full strategy
     try {
       const data = await generateLocalSEOStrategy(values);
-      setResult(data); // This will trigger the useEffect to save to localStorage
+      setResult(data);
       toast({
         title: "Strategy Generated!",
         description: "Your local SEO strategy has been successfully created.",
@@ -264,10 +277,43 @@ export default function LocalSeoPage() {
         description: (error as Error).message || "Could not generate the local SEO strategy. Please try again.",
         variant: "destructive",
       });
-      // Optionally clear results on error or keep showing old ones
-      // setResult(null);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleRefineStrategy() {
+    if (!result || !refinementPrompt.trim() || !activeInstitution) {
+      toast({ title: "Cannot refine", description: "An existing strategy, a refinement prompt, and an active institution are required.", variant: "destructive" });
+      return;
+    }
+    setIsRefining(true);
+    try {
+      const institutionContextForRefinement: GenerateLocalSEOStrategyInput = {
+        institutionName: activeInstitution.name,
+        location: activeInstitution.location,
+        programsOffered: activeInstitution.programsOffered,
+        targetAudience: activeInstitution.targetAudience,
+        websiteUrl: activeInstitution.websiteUrl || "",
+      };
+      const refineInput: RefineLocalSEOStrategyInput = {
+        currentStrategy: result,
+        userPrompt: refinementPrompt,
+        institutionContext: institutionContextForRefinement,
+      };
+      const updatedStrategy = await refineLocalSEOStrategy(refineInput);
+      setResult(updatedStrategy);
+      setRefinementPrompt(""); 
+      toast({ title: "Strategy Refined!", description: "The local SEO strategy has been updated based on your prompt." });
+    } catch (error) {
+      console.error("Error refining local SEO strategy:", error);
+      toast({
+        title: "Error Refining Strategy",
+        description: (error as Error).message || "Could not refine the strategy. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefining(false);
     }
   }
   
@@ -314,118 +360,13 @@ export default function LocalSeoPage() {
     <div className="space-y-8">
       <PageHeaderTitle
         title="AI-Powered Local SEO Strategy"
-        description="Provide details about your institution to generate a tailored local SEO strategy."
+        description="Generate, view, and refine tailored local SEO strategies for your institution."
         icon={MapPin}
       />
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Institution Details</CardTitle>
-          <CardDescription>Fill out the form below to get started. Select an institution or fill details manually.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
-                  control={form.control}
-                  name="institutionName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Institution Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Springfield University" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="location"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Location (City, State)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Springfield, IL" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <FormField
-                control={form.control}
-                name="programsOffered"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Programs Offered</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Describe the main programs and courses offered..."
-                        className="min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="targetAudience"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Target Audience</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Describe your primary target audience (e.g., high school graduates, working professionals seeking certifications)..."
-                        className="min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="websiteUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Website URL</FormLabel>
-                    <FormControl>
-                      <Input type="url" placeholder="https://www.example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" disabled={isLoading || !activeInstitution} className="w-full md:w-auto">
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generating Strategy...
-                  </>
-                ) : (
-                  "Generate Local SEO Strategy"
-                )}
-              </Button>
-               {!activeInstitution && <p className="text-sm text-destructive">Please select or create an institution to generate a strategy.</p>}
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
-
-      {isLoading && !result && (
-        <div className="text-center py-4">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-          <p className="mt-2 text-muted-foreground">Generating your strategy, please wait...</p>
-        </div>
-      )}
-
-      {result && (
-        <div className="space-y-6 mt-8">
+      {/* Display Existing Strategy and Refinement Options */}
+      {result && activeInstitution && (
+        <div className="space-y-6">
           <SectionDisplay title="Executive Summary" content={result.executiveSummary} icon={FileText} />
           <SectionDisplay 
             title="Keyword Research" 
@@ -441,13 +382,91 @@ export default function LocalSeoPage() {
           <SectionDisplay title="Technical Local SEO" content={result.technicalLocalSEO} icon={Settings2} />
           <SectionDisplay title="Tracking & Reporting" content={result.trackingReporting} icon={Presentation} onItemsStatusChange={handleItemStatusChange} />
           <SectionDisplay title="Conclusion" content={result.conclusion} icon={Target} />
+
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center"><Wand2 className="mr-2 h-5 w-5" />Refine Current Strategy with AI</CardTitle>
+              <CardDescription>Provide a prompt to modify or add to the current strategy (e.g., "Add 'best design schools in [location]' to primary keywords and analyze its potential.").</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Textarea
+                placeholder="Enter your refinement prompt here..."
+                value={refinementPrompt}
+                onChange={(e) => setRefinementPrompt(e.target.value)}
+                className="min-h-[100px]"
+              />
+              <Button onClick={handleRefineStrategy} disabled={isRefining || !refinementPrompt.trim() || isLoading}>
+                {isRefining ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Refining...</> : "Refine with AI"}
+              </Button>
+            </CardContent>
+          </Card>
+          
+          <Card className="shadow-lg">
+             <CardHeader>
+               <CardTitle>Start Over: Generate New Full Strategy</CardTitle>
+               <CardDescription>Fill details to generate a new strategy. This will replace the current displayed strategy.</CardDescription>
+             </CardHeader>
+             <CardContent>
+               <Form {...form}>
+                 <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                     <FormField control={form.control} name="location" render={({ field }) => (<FormItem><FormLabel>Location</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                   </div>
+                   <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem><FormLabel>Programs Offered</FormLabel><FormControl><Textarea className="min-h-[80px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                   <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem><FormLabel>Target Audience</FormLabel><FormControl><Textarea className="min-h-[80px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                   <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Website URL</FormLabel><FormControl><Input type="url" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                   <Button type="submit" disabled={isLoading || !activeInstitution || isRefining}>
+                     {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating New Strategy...</> : "Generate New Full Strategy"}
+                   </Button>
+                 </form>
+               </Form>
+             </CardContent>
+           </Card>
         </div>
       )}
-      {result && !result.executiveSummary && !isLoading && (
+
+      {/* Initial Generation Form (shown if no result or no active institution) */}
+      {(!result || !activeInstitution) && !isLoading && (
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle>Institution Details for New Strategy</CardTitle>
+            <CardDescription>Fill out the form below to get started. Select an institution or fill details manually.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input placeholder="e.g., Springfield University" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                  <FormField control={form.control} name="location" render={({ field }) => (<FormItem><FormLabel>Location (City, State)</FormLabel><FormControl><Input placeholder="e.g., Springfield, IL" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                </div>
+                <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem><FormLabel>Programs Offered</FormLabel><FormControl><Textarea placeholder="Describe the main programs and courses offered..." className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem><FormLabel>Target Audience</FormLabel><FormControl><Textarea placeholder="Describe your primary target audience..." className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Website URL</FormLabel><FormControl><Input type="url" placeholder="https://www.example.com" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                <Button type="submit" disabled={isLoading || !activeInstitution}>
+                  {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Strategy...</> : "Generate Local SEO Strategy"}
+                </Button>
+                {!activeInstitution && <p className="text-sm text-destructive mt-2">Please select or create an institution to generate a strategy.</p>}
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Loading indicator for initial generation */}
+      {isLoading && !result && (
+        <div className="text-center py-10">
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+          <p className="mt-4 text-lg text-muted-foreground">Generating your local SEO strategy, please wait...</p>
+        </div>
+      )}
+      
+      {/* Message if no strategy could be generated (after attempting) */}
+      {result && !result.executiveSummary && !isLoading && !activeInstitution && (
          <Card className="mt-6 shadow-lg">
            <CardHeader><CardTitle>No Strategy Generated</CardTitle></CardHeader>
            <CardContent>
-             <p>The AI could not generate a local SEO strategy based on the provided input. Please try refining your input or try again later. If you had a previously saved strategy, it might have been cleared.</p>
+             <p>The AI could not generate a local SEO strategy. This might be because no institution is selected or the previous attempt failed. Please select an institution and try generating again, or refine your input.</p>
            </CardContent>
          </Card>
        )}

@@ -125,33 +125,27 @@ export default function GmbOptimizerPage() {
         targetAudience: activeInstitution.targetAudience,
         uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
       });
-    } else {
-      form.reset({
-        institutionName: "",
-        institutionType: "",
-        location: "",
-        programsOffered: "",
-        targetAudience: "",
-        uniqueSellingPoints: "",
-      });
-    }
-    
-    const key = getCurrentStorageKey();
-    if (key) {
-      const storedResult = localStorage.getItem(key);
-      if (storedResult) {
-        try {
-          setResult(JSON.parse(storedResult));
-        } catch (error) {
-          console.error(`Failed to parse stored GMB results for ${key}:`, error);
-          localStorage.removeItem(key); // Clear corrupted data
-          setResult(null);
+      const key = getCurrentStorageKey();
+      if (key) {
+        const storedResult = localStorage.getItem(key);
+        if (storedResult) {
+          try {
+            setResult(JSON.parse(storedResult));
+          } catch (error) {
+            console.error(`Failed to parse stored GMB results for ${key}:`, error);
+            localStorage.removeItem(key); 
+            setResult(null);
+          }
+        } else {
+          setResult(null); 
         }
-      } else {
-        setResult(null); // No stored result for this institution
       }
     } else {
-      setResult(null); // No active institution
+      form.reset({
+        institutionName: "", institutionType: "", location: "",
+        programsOffered: "", targetAudience: "", uniqueSellingPoints: "",
+      });
+      setResult(null); 
     }
   }, [activeInstitution, form]);
   
@@ -160,7 +154,6 @@ export default function GmbOptimizerPage() {
     if (key && result) {
       localStorage.setItem(key, JSON.stringify(result));
     } else if (key && !result) {
-      // If result is nullified (e.g., due to form submission for a new strategy or error), remove stored data
       localStorage.removeItem(key);
     }
   }, [result, activeInstitution?.id]);
@@ -168,13 +161,12 @@ export default function GmbOptimizerPage() {
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    // Consider clearing old results if you want a clean slate while loading,
-    // or keep them to show something while new data is fetched.
-    // setResult(null); // Optional: Clears previous results from UI immediately
-    
+    // For GMB, generating new optimizations should likely replace old ones.
+    // If you wanted to append or merge, logic here would be more complex.
+    // setResult(null); // Clearing previous results if a full re-generation is intended.
     try {
       const data = await generateGMBOptimizations(values);
-      setResult(data); // This will trigger the useEffect to save to localStorage
+      setResult(data); 
       toast({
         title: "Optimizations Generated!",
         description: "Your GMB optimization suggestions have been successfully created.",
@@ -186,8 +178,6 @@ export default function GmbOptimizerPage() {
         description: (error as Error).message || "Could not generate GMB optimizations. Please try again.",
         variant: "destructive",
       });
-       // Optionally clear results on error or keep showing old ones
-       // setResult(null); 
     } finally {
       setIsLoading(false);
     }
@@ -196,7 +186,6 @@ export default function GmbOptimizerPage() {
   const handleSectionStatusChange = (sectionKey: GMBSectionKey, newStatus: Status) => {
     setResult(prevResult => {
       if (!prevResult) return null;
-      // For keywordSuggestionsSectionStatus, the key in the output schema is 'keywordSuggestionsSectionStatus'
       const statusFieldKey = sectionKey === 'keywordSuggestionsSection' 
         ? 'keywordSuggestionsSectionStatus' 
         : `${sectionKey}Status` as keyof GenerateGMBOptimizationsOutput;
@@ -236,121 +225,31 @@ export default function GmbOptimizerPage() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
-                  control={form.control}
-                  name="institutionName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Institution Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Lincoln High School" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="institutionType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Institution Type</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., High School, University, Vocational School" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input placeholder="e.g., Lincoln High School" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                <FormField control={form.control} name="institutionType" render={({ field }) => (<FormItem><FormLabel>Institution Type</FormLabel><FormControl><Input placeholder="e.g., High School, University" {...field} /></FormControl><FormMessage /></FormItem>)} />
               </div>
-              <FormField
-                control={form.control}
-                name="location"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Location (City, State)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Lincoln, NE" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="programsOffered"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Programs Offered</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Briefly describe key programs or specializations..."
-                        className="min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="targetAudience"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Target Audience</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Who are you trying to reach? (e.g., prospective students, parents of K-12 students)..."
-                        className="min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="uniqueSellingPoints"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Unique Selling Points</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="What makes your institution stand out? (e.g., award-winning faculty, specialized programs, strong alumni network)..."
-                        className="min-h-[100px]"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormField control={form.control} name="location" render={({ field }) => (<FormItem><FormLabel>Location (City, State)</FormLabel><FormControl><Input placeholder="e.g., Lincoln, NE" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem><FormLabel>Programs Offered</FormLabel><FormControl><Textarea placeholder="Briefly describe key programs..." className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem><FormLabel>Target Audience</FormLabel><FormControl><Textarea placeholder="Who are you trying to reach?" className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <FormField control={form.control} name="uniqueSellingPoints" render={({ field }) => (<FormItem><FormLabel>Unique Selling Points</FormLabel><FormControl><Textarea placeholder="What makes your institution stand out?" className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
               <Button type="submit" disabled={isLoading || !activeInstitution} className="w-full md:w-auto">
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generating Optimizations...
-                  </>
-                ) : (
-                  "Generate GMB Optimizations"
-                )}
+                {isLoading ? ( <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                ) : result ? "Re-generate Optimizations" : "Generate GMB Optimizations"}
               </Button>
-              {!activeInstitution && <p className="text-sm text-destructive">Please select or create an institution to generate optimizations.</p>}
+              {!activeInstitution && <p className="text-sm text-destructive mt-2">Please select or create an institution to generate optimizations.</p>}
             </form>
           </Form>
         </CardContent>
       </Card>
 
-      {isLoading && !result && (
-        <div className="text-center py-4">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-          <p className="mt-2 text-muted-foreground">Generating your GMB optimizations, please wait...</p>
+      {isLoading && ( // Show loader if actively loading, regardless of whether old result exists
+        <div className="text-center py-10">
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+          <p className="mt-4 text-lg text-muted-foreground">Generating your GMB optimizations, please wait...</p>
         </div>
       )}
 
-      {result && (
+      {!isLoading && result && ( // Only show results if not loading and result exists
         <div className="space-y-6 mt-6">
           <Card>
             <CardHeader className="flex flex-row justify-between items-center">
@@ -387,11 +286,12 @@ export default function GmbOptimizerPage() {
           </Card>
         </div>
       )}
-       {result && (!result.keywordSuggestions || result.keywordSuggestions.length === 0) && !result.descriptionSuggestions && !result.optimizationTips && !isLoading && (
+      {/* Message if no data could be generated OR if no data has been loaded/generated yet for the selected institution */}
+      {!isLoading && !result && activeInstitution && (
          <Card className="mt-6 shadow-lg">
-           <CardHeader><CardTitle>No Optimizations Generated</CardTitle></CardHeader>
+           <CardHeader><CardTitle>No GMB Optimizations Available</CardTitle></CardHeader>
            <CardContent>
-             <p>The AI could not generate GMB optimizations based on the provided input. Please try refining your input or try again later. If you had a previously saved strategy, it might have been cleared.</p>
+             <p>No GMB optimizations have been generated for {activeInstitution.name} yet, or the previous attempt failed. Please use the form above to generate them.</p>
            </CardContent>
          </Card>
        )}
