@@ -33,17 +33,6 @@ const formSchema = z.object({
   websiteUrl: z.string().url("Please enter a valid URL."),
 });
 
-async function generateStrategyAction(input: GenerateLocalSEOStrategyInput): Promise<{ success: boolean; data?: GenerateLocalSEOStrategyOutput; error?: string }> {
-  "use server";
-  try {
-    const result = await generateLocalSEOStrategy(input);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error generating local SEO strategy:", error);
-    return { success: false, error: (error as Error).message || "Failed to generate strategy." };
-  }
-}
-
 export default function LocalSeoPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -64,17 +53,14 @@ export default function LocalSeoPage() {
     setIsLoading(true);
     setResult(null);
     try {
-      const response = await generateStrategyAction(values);
-      if (response.success && response.data) {
-        setResult(response.data);
-        toast({
-          title: "Strategy Generated!",
-          description: "Your local SEO strategy has been successfully created.",
-        });
-      } else {
-        throw new Error(response.error || "An unknown error occurred.");
-      }
+      const data = await generateLocalSEOStrategy(values);
+      setResult(data);
+      toast({
+        title: "Strategy Generated!",
+        description: "Your local SEO strategy has been successfully created.",
+      });
     } catch (error) {
+      console.error("Error generating local SEO strategy:", error);
       toast({
         title: "Error Generating Strategy",
         description: (error as Error).message || "Could not generate the local SEO strategy. Please try again.",

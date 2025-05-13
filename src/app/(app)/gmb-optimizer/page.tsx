@@ -32,17 +32,6 @@ const formSchema = z.object({
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
 
-async function generateOptimizationsAction(input: GenerateGMBOptimizationsInput): Promise<{ success: boolean; data?: GenerateGMBOptimizationsOutput; error?: string }> {
-  "use server";
-  try {
-    const result = await generateGMBOptimizations(input);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error generating GMB optimizations:", error);
-    return { success: false, error: (error as Error).message || "Failed to generate GMB optimizations." };
-  }
-}
-
 export default function GmbOptimizerPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -64,17 +53,14 @@ export default function GmbOptimizerPage() {
     setIsLoading(true);
     setResult(null);
     try {
-      const response = await generateOptimizationsAction(values);
-      if (response.success && response.data) {
-        setResult(response.data);
-        toast({
-          title: "Optimizations Generated!",
-          description: "Your GMB optimization suggestions have been successfully created.",
-        });
-      } else {
-        throw new Error(response.error || "An unknown error occurred.");
-      }
+      const data = await generateGMBOptimizations(values);
+      setResult(data);
+      toast({
+        title: "Optimizations Generated!",
+        description: "Your GMB optimization suggestions have been successfully created.",
+      });
     } catch (error) {
+      console.error("Error generating GMB optimizations:", error);
       toast({
         title: "Error Generating Optimizations",
         description: (error as Error).message || "Could not generate GMB optimizations. Please try again.",

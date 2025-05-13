@@ -34,17 +34,6 @@ const formSchema = z.object({
   marketingGoals: z.string().min(10, "Marketing goals description is too short."),
 });
 
-async function generateStrategyAction(input: GeneratePerformanceMarketingStrategyInput): Promise<{ success: boolean; data?: GeneratePerformanceMarketingStrategyOutput; error?: string }> {
-  "use server";
-  try {
-    const result = await generatePerformanceMarketingStrategy(input);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error generating performance marketing strategy:", error);
-    return { success: false, error: (error as Error).message || "Failed to generate strategy." };
-  }
-}
-
 export default function PerformanceMarketingPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -67,17 +56,14 @@ export default function PerformanceMarketingPage() {
     setIsLoading(true);
     setResult(null);
     try {
-      const response = await generateStrategyAction(values);
-      if (response.success && response.data) {
-        setResult(response.data);
-        toast({
-          title: "Strategy Generated!",
-          description: "Your performance marketing strategy has been successfully created.",
-        });
-      } else {
-        throw new Error(response.error || "An unknown error occurred.");
-      }
+      const data = await generatePerformanceMarketingStrategy(values);
+      setResult(data);
+      toast({
+        title: "Strategy Generated!",
+        description: "Your performance marketing strategy has been successfully created.",
+      });
     } catch (error) {
+      console.error("Error generating performance marketing strategy:", error);
       toast({
         title: "Error Generating Strategy",
         description: (error as Error).message || "Could not generate strategy. Please try again.",
@@ -98,7 +84,7 @@ export default function PerformanceMarketingPage() {
 
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Institution & Marketing Goals</CardTitle>
+          <CardTitle>Institution &amp; Marketing Goals</CardTitle>
           <CardDescription>Complete the form to get your AI-generated strategy.</CardDescription>
         </CardHeader>
         <CardContent>

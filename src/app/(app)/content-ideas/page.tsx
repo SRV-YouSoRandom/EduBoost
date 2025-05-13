@@ -32,17 +32,6 @@ const formSchema = z.object({
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
 
-async function generateIdeasAction(input: GenerateContentIdeasInput): Promise<{ success: boolean; data?: GenerateContentIdeasOutput; error?: string }> {
-  "use server";
-  try {
-    const result = await generateContentIdeas(input);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error generating content ideas:", error);
-    return { success: false, error: (error as Error).message || "Failed to generate content ideas." };
-  }
-}
-
 export default function ContentIdeasPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
@@ -63,17 +52,14 @@ export default function ContentIdeasPage() {
     setIsLoading(true);
     setResult(null);
     try {
-      const response = await generateIdeasAction(values);
-      if (response.success && response.data) {
-        setResult(response.data);
-        toast({
-          title: "Content Ideas Generated!",
-          description: "A fresh batch of content ideas has been successfully created for you.",
-        });
-      } else {
-        throw new Error(response.error || "An unknown error occurred.");
-      }
+      const data = await generateContentIdeas(values);
+      setResult(data);
+      toast({
+        title: "Content Ideas Generated!",
+        description: "A fresh batch of content ideas has been successfully created for you.",
+      });
     } catch (error) {
+      console.error("Error generating content ideas:", error);
       toast({
         title: "Error Generating Ideas",
         description: (error as Error).message || "Could not generate content ideas. Please try again.",
