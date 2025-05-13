@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from '@/lib/utils';
-import { CheckCircle, Circle, XCircle, Settings2Icon } from 'lucide-react'; // Using Settings2Icon for In Progress
+import { CheckCircle, Circle, XCircle, Settings2Icon } from 'lucide-react'; 
 
 interface StatusControlProps {
   currentStatus: Status;
@@ -27,6 +27,14 @@ const statusIconMap: Record<Status, React.ElementType> = {
 };
 
 const statusColorMap: Record<Status, string> = {
+  pending: 'text-muted-foreground', // Use a neutral color for pending in trigger
+  inProgress: 'text-blue-500',
+  done: 'text-green-500',
+  rejected: 'text-red-500',
+};
+
+// Specific colors for items in the dropdown, can be same or different
+const dropdownItemColorMap: Record<Status, string> = {
   pending: 'text-muted-foreground',
   inProgress: 'text-blue-500',
   done: 'text-green-500',
@@ -36,19 +44,26 @@ const statusColorMap: Record<Status, string> = {
 
 export default function StatusControl({ currentStatus, onStatusChange, size = 'default' }: StatusControlProps) {
   const triggerWidthClass = size === 'sm' ? "min-w-[110px] max-w-[150px]" : "min-w-[130px] max-w-[180px]";
+  const SelectedIcon = statusIconMap[currentStatus];
+  const selectedOption = STATUS_OPTIONS.find(option => option.value === currentStatus);
 
   return (
     <Select value={currentStatus} onValueChange={(value) => onStatusChange(value as Status)}>
       <SelectTrigger 
         className={cn(
           triggerWidthClass,
-          size === 'sm' ? "h-8 text-xs px-2 py-1" : "h-10"
-          // Color is now applied to SelectItem, and SelectValue will inherit it via selected item's content
+          size === 'sm' ? "h-8 text-xs px-2 py-1" : "h-10",
+          statusColorMap[currentStatus] // Apply color to the trigger
         )}
         aria-label={`Current status: ${currentStatus}`}
       >
-        {/* SelectValue will render the selected SelectItem's content, which includes its icon and text styling */}
-        <SelectValue placeholder="Set status" />
+        <SelectValue placeholder="Set status">
+           {/* Custom rendering for the selected value display */}
+           <div className="flex items-center gap-2">
+            <SelectedIcon className={cn("h-4 w-4")} /> {/* Icon inherits color from trigger */}
+            {selectedOption?.label}
+          </div>
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {STATUS_OPTIONS.map((option) => {
@@ -57,10 +72,10 @@ export default function StatusControl({ currentStatus, onStatusChange, size = 'd
             <SelectItem 
               key={option.value} 
               value={option.value}
-              className={cn(statusColorMap[option.value])} // Apply color to the SelectItem itself
+              // Apply specific color for dropdown item, not necessarily the trigger's displayed color base
+              className={cn(dropdownItemColorMap[option.value])} 
             >
               <div className="flex items-center gap-2">
-                {/* Icon color will be inherited from parent SelectItem's text color */}
                 <OptionIcon className={cn("h-4 w-4")} /> 
                 {option.label}
               </div>
@@ -71,3 +86,4 @@ export default function StatusControl({ currentStatus, onStatusChange, size = 'd
     </Select>
   );
 }
+
