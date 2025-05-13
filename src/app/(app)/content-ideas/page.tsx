@@ -452,7 +452,7 @@ export default function ContentIdeasPage() {
              </CardHeader>
              <CardContent>
               {maxIdeasReached && (
-                <div className="mb-4 p-3 bg-destructive/10 border border-destructive text-destructive-foreground rounded-md flex items-center text-sm">
+                <div className="mb-4 p-3 bg-destructive/10 border border-destructive text-destructive rounded-md flex items-center text-sm">
                   <AlertCircle className="h-5 w-5 mr-2" />
                   Maximum of 10 ideas reached. Please delete some ideas to generate new ones.
                 </div>

@@ -6,6 +6,7 @@ import UserNav from "@/components/layout/user-nav";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { InstitutionProvider } from "@/contexts/InstitutionContext";
 import InstitutionSelector from "@/components/common/InstitutionSelector";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -37,8 +38,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
                 <InstitutionSelector />
               </div>
-              <div className="flex-1" /> {/* Spacer */}
-              <UserNav />
+              <div className="flex items-center gap-2"> {}
+                <ThemeToggle />
+                <UserNav />
+              </div>
             </header>
             <main className="flex-1 overflow-y-auto">
               <div className="container mx-auto px-4 py-6 sm:px-6 lg:px-8">
