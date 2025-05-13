@@ -27,13 +27,18 @@ This is a Next.js application designed to assist educational institutions with t
     *   Navigate to the "SQL Editor" section.
     *   Open the `docs/supabase_setup.sql` file from this project.
     *   Copy the entire content of the SQL file.
-    *   Paste it into the Supabase SQL Editor and click "Run". This will create the necessary tables and set up basic structures.
-    *   **Row Level Security (RLS):** The SQL script includes commented-out RLS policies. For a production application with user authentication, you should:
-        1.  Enable RLS for each table in the Supabase Dashboard (Authentication > Policies for each table).
-        2.  Uncomment and adapt the RLS policies in `supabase_setup.sql` to match your authentication setup, ensuring users can only access their own data.
-        3.  If you are testing without user authentication (using the `anon` key for all operations), you might need to initially set more permissive RLS policies or temporarily disable RLS for the tables. **This is not recommended for production.**
+    *   Paste it into the Supabase SQL Editor and click "Run". This will:
+        *   Create the necessary tables: `institutions`, `content_ideas`, `gmb_optimizations`, `local_seo_strategies`, and `performance_marketing_strategies`.
+        *   Set up foreign key relationships with cascade delete (e.g., deleting an institution will also delete its associated strategies).
+        *   Create a function and triggers to automatically update `updated_at` timestamps.
+        *   Enable Row Level Security (RLS) on all created tables.
+        *   Apply permissive RLS policies for the `anon` role, allowing full CRUD access. **These policies are intended for initial development and must be tightened when user authentication is implemented.**
 
-5.  **Run the Genkit development server (for AI features):**
+5.  **Understanding Row Level Security (RLS):**
+    *   The `supabase_setup.sql` script enables RLS and sets up initial permissive policies for development purposes (allowing anonymous users full access). This is crucial for the application to function correctly with the `anon` key before full user authentication is in place.
+    *   **For Production:** When you implement user authentication, you **MUST** replace these permissive `anon` policies with stricter policies that scope data access to the authenticated user (e.g., `auth.uid() = user_id`). Examples and notes for this are included as comments at the end of the `supabase_setup.sql` script.
+
+6.  **Run the Genkit development server (for AI features):**
     In a separate terminal:
     ```bash
     npm run genkit:dev
@@ -44,7 +49,7 @@ This is a Next.js application designed to assist educational institutions with t
     ```
     *Ensure you have your Google AI API key configured for Genkit, typically via `GOOGLE_API_KEY` environment variable or other Genkit configuration methods.*
 
-6.  **Run the Next.js development server:**
+7.  **Run the Next.js development server:**
     ```bash
     npm run dev
     ```
@@ -60,4 +65,5 @@ This is a Next.js application designed to assist educational institutions with t
 
 ## Data Persistence
 
-This application uses Supabase to store all institution data and generated strategies. Each institution you create will have its associated marketing data saved in the Supabase database.
+This application uses Supabase to store all institution data and generated strategies. Each institution you create will have its associated marketing data saved in the Supabase database. The relationships are set up with cascade delete, meaning if an institution is deleted, all its related strategy data will also be removed.
+```
