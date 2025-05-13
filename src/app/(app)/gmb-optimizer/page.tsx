@@ -16,9 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import PageHeaderTitle from "@/components/common/page-header-title";
+import StatusControl from "@/components/common/StatusControl";
+import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Loader2, Building } from "lucide-react";
+import { useInstitutions } from "@/contexts/InstitutionContext";
+import MarkdownDisplay from "@/components/common/markdown-display";
 
 import type { GenerateGMBOptimizationsInput, GenerateGMBOptimizationsOutput } from '@/ai/flows/generate-gmb-optimizations';
 import { generateGMBOptimizations } from '@/ai/flows/generate-gmb-optimizations';
@@ -32,8 +36,13 @@ const formSchema = z.object({
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
 
+type GMBSectionKey = 'keywordSuggestions' | 'descriptionSuggestions' | 'optimizationTips';
+
+const LOCAL_STORAGE_KEY_GMB_OPTIMIZER = "gmbOptimizerResult";
+
 export default function GmbOptimizerPage() {
   const { toast } = useToast();
+  const { activeInstitution } = useInstitutions();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<GenerateGMBOptimizationsOutput | null>(null);
 
@@ -49,9 +58,55 @@ export default function GmbOptimizerPage() {
     },
   });
 
+  useEffect(() => {
+    if (activeInstitution) {
+      form.reset({
+        institutionName: activeInstitution.name,
+        institutionType: activeInstitution.type,
+        location: activeInstitution.location,
+        programsOffered: activeInstitution.programsOffered,
+        targetAudience: activeInstitution.targetAudience,
+        uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
+      });
+      setResult(null);
+      localStorage.removeItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
+    } else {
+      form.reset({
+        institutionName: "",
+        institutionType: "",
+        location: "",
+        programsOffered: "",
+        targetAudience: "",
+        uniqueSellingPoints: "",
+      });
+      setResult(null);
+      localStorage.removeItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
+    }
+  }, [activeInstitution, form]);
+  
+  useEffect(() => {
+    const storedResult = localStorage.getItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
+    if (storedResult) {
+      try {
+        setResult(JSON.parse(storedResult));
+      } catch (error) {
+        console.error("Failed to parse stored GMB results:", error);
+        localStorage.removeItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (result) {
+      localStorage.setItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER, JSON.stringify(result));
+    }
+  }, [result]);
+
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     setResult(null);
+    localStorage.removeItem(LOCAL_STORAGE_KEY_GMB_OPTIMIZER);
     try {
       const data = await generateGMBOptimizations(values);
       setResult(data);
@@ -71,6 +126,17 @@ export default function GmbOptimizerPage() {
     }
   }
 
+  const handleSectionStatusChange = (sectionKey: GMBSectionKey, newStatus: Status) => {
+    setResult(prevResult => {
+      if (!prevResult) return null;
+      const statusFieldKey = `${sectionKey}Status` as keyof GenerateGMBOptimizationsOutput;
+      return {
+        ...prevResult,
+        [statusFieldKey]: newStatus,
+      };
+    });
+  };
+
   return (
     <div className="space-y-8">
       <PageHeaderTitle
@@ -82,7 +148,7 @@ export default function GmbOptimizerPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>GMB Profile Details</CardTitle>
-          <CardDescription>Provide information about your institution to receive GMB optimization tips.</CardDescription>
+          <CardDescription>Provide information about your institution to receive GMB optimization tips. Select an institution or fill details manually.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -194,7 +260,7 @@ export default function GmbOptimizerPage() {
         </CardContent>
       </Card>
 
-      {isLoading && (
+      {isLoading && !result && (
         <div className="text-center py-4">
           <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
           <p className="mt-2 text-muted-foreground">Generating your GMB optimizations, please wait...</p>
@@ -204,19 +270,45 @@ export default function GmbOptimizerPage() {
       {result && (
         <div className="space-y-6 mt-6">
           <Card>
-            <CardHeader><CardTitle>Keyword Suggestions</CardTitle></CardHeader>
-            <CardContent><p className="whitespace-pre-wrap">{result.keywordSuggestions}</p></CardContent>
+            <CardHeader className="flex flex-row justify-between items-center">
+              <CardTitle>Keyword Suggestions</CardTitle>
+              <StatusControl
+                currentStatus={result.keywordSuggestionsStatus}
+                onStatusChange={(newStatus) => handleSectionStatusChange('keywordSuggestions', newStatus)}
+              />
+            </CardHeader>
+            <CardContent><MarkdownDisplay content={result.keywordSuggestions} asCard={false} /></CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Description Suggestions</CardTitle></CardHeader>
-            <CardContent><p className="whitespace-pre-wrap">{result.descriptionSuggestions}</p></CardContent>
+            <CardHeader className="flex flex-row justify-between items-center">
+              <CardTitle>Description Suggestions</CardTitle>
+               <StatusControl
+                currentStatus={result.descriptionSuggestionsStatus}
+                onStatusChange={(newStatus) => handleSectionStatusChange('descriptionSuggestions', newStatus)}
+              />
+            </CardHeader>
+            <CardContent><MarkdownDisplay content={result.descriptionSuggestions} asCard={false} /></CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle>Additional Optimization Tips</CardTitle></CardHeader>
-            <CardContent><p className="whitespace-pre-wrap">{result.optimizationTips}</p></CardContent>
+            <CardHeader className="flex flex-row justify-between items-center">
+              <CardTitle>Additional Optimization Tips</CardTitle>
+              <StatusControl
+                currentStatus={result.optimizationTipsStatus}
+                onStatusChange={(newStatus) => handleSectionStatusChange('optimizationTips', newStatus)}
+              />
+            </CardHeader>
+            <CardContent><MarkdownDisplay content={result.optimizationTips} asCard={false} /></CardContent>
           </Card>
         </div>
       )}
+       {result && !result.keywordSuggestions && !result.descriptionSuggestions && !result.optimizationTips && !isLoading && (
+         <Card className="mt-6 shadow-lg">
+           <CardHeader><CardTitle>No Optimizations Generated</CardTitle></CardHeader>
+           <CardContent>
+             <p>The AI could not generate GMB optimizations based on the provided input. Please try refining your input or try again later.</p>
+           </CardContent>
+         </Card>
+       )}
     </div>
   );
 }

@@ -16,13 +16,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import PageHeaderTitle from "@/components/common/page-header-title";
+import StatusControl from "@/components/common/StatusControl";
+import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
-import { Loader2, Lightbulb, CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Loader2, Lightbulb } from "lucide-react";
+import { useInstitutions } from "@/contexts/InstitutionContext";
 
-import type { GenerateContentIdeasInput, GenerateContentIdeasOutput } from '@/ai/flows/generate-content-ideas';
+import type { GenerateContentIdeasInput, GenerateContentIdeasOutput, ContentIdeaWithStatus } from '@/ai/flows/generate-content-ideas';
 import { generateContentIdeas } from '@/ai/flows/generate-content-ideas';
-
+import { cn } from "@/lib/utils";
 
 const formSchema = z.object({
   institutionName: z.string().min(2, "Institution name is required."),
@@ -32,8 +35,11 @@ const formSchema = z.object({
   uniqueSellingPoints: z.string().min(10, "Unique selling points description is too short."),
 });
 
+const LOCAL_STORAGE_KEY_CONTENT_IDEAS = "contentIdeasResult";
+
 export default function ContentIdeasPage() {
   const { toast } = useToast();
+  const { activeInstitution } = useInstitutions();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<GenerateContentIdeasOutput | null>(null);
 
@@ -48,9 +54,53 @@ export default function ContentIdeasPage() {
     },
   });
 
+  useEffect(() => {
+    if (activeInstitution) {
+      form.reset({
+        institutionName: activeInstitution.name,
+        institutionType: activeInstitution.type,
+        targetAudience: activeInstitution.targetAudience,
+        programsOffered: activeInstitution.programsOffered,
+        uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
+      });
+      // Clear previous results when institution changes
+      setResult(null);
+      localStorage.removeItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS);
+    } else {
+       form.reset({ // Reset to default if no active institution
+        institutionName: "",
+        institutionType: "",
+        targetAudience: "",
+        programsOffered: "",
+        uniqueSellingPoints: "",
+      });
+      setResult(null);
+      localStorage.removeItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS);
+    }
+  }, [activeInstitution, form]);
+
+  useEffect(() => {
+    const storedResult = localStorage.getItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS);
+    if (storedResult) {
+      try {
+        setResult(JSON.parse(storedResult));
+      } catch (error) {
+        console.error("Failed to parse stored content ideas:", error);
+        localStorage.removeItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (result) {
+      localStorage.setItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS, JSON.stringify(result));
+    }
+  }, [result]);
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     setResult(null);
+    localStorage.removeItem(LOCAL_STORAGE_KEY_CONTENT_IDEAS); 
     try {
       const data = await generateContentIdeas(values);
       setResult(data);
@@ -70,6 +120,35 @@ export default function ContentIdeasPage() {
     }
   }
 
+  const handleStatusChange = (id: string, newStatus: Status) => {
+    setResult(prevResult => {
+      if (!prevResult) return null;
+      const updatedIdeas = prevResult.contentIdeas.map(idea =>
+        idea.id === id ? { ...idea, status: newStatus } : idea
+      );
+      return { ...prevResult, contentIdeas: updatedIdeas };
+    });
+  };
+  
+  const statusIconMap: Record<Status, React.ElementType> = {
+    pending: Lightbulb, // Placeholder, actual icon from StatusControl
+    inProgress: Loader2,
+    done: Lightbulb, // Placeholder
+    rejected: Lightbulb, // Placeholder
+  };
+  
+  const getStatusSpecificStyling = (status: Status) => {
+    switch (status) {
+      case 'done':
+        return 'line-through text-muted-foreground opacity-70';
+      case 'rejected':
+        return 'text-destructive opacity-70';
+      default:
+        return '';
+    }
+  };
+
+
   return (
     <div className="space-y-8">
       <PageHeaderTitle
@@ -81,7 +160,7 @@ export default function ContentIdeasPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Institution Profile</CardTitle>
-          <CardDescription>Tell us about your institution to get relevant content ideas.</CardDescription>
+          <CardDescription>Tell us about your institution to get relevant content ideas. Select an institution or fill details manually.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -180,7 +259,7 @@ export default function ContentIdeasPage() {
         </CardContent>
       </Card>
 
-      {isLoading && (
+      {isLoading && !result && (
         <div className="text-center py-4">
           <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
           <p className="mt-2 text-muted-foreground">Brainstorming content ideas for you...</p>
@@ -191,16 +270,37 @@ export default function ContentIdeasPage() {
         <Card className="mt-6 shadow-lg">
           <CardHeader>
             <CardTitle>Generated Content Ideas</CardTitle>
+            <CardDescription>Manage the status of your generated content ideas below.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-3">
-              {result.contentIdeas.map((idea, index) => (
-                <li key={index} className="flex items-start p-3 bg-muted/50 rounded-md">
-                  <CheckCircle className="h-5 w-5 text-green-500 mr-3 mt-1 flex-shrink-0" />
-                  <span>{idea}</span>
+            <ul className="space-y-4">
+              {result.contentIdeas.map((idea: ContentIdeaWithStatus) => (
+                <li 
+                  key={idea.id} 
+                  className={cn(
+                    "flex flex-col md:flex-row md:items-center md:justify-between p-4 rounded-lg border bg-card gap-4",
+                    getStatusSpecificStyling(idea.status)
+                  )}
+                >
+                  <span className="flex-1">{idea.text}</span>
+                  <StatusControl
+                    currentStatus={idea.status}
+                    onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
+                    size="sm"
+                  />
                 </li>
               ))}
             </ul>
+          </CardContent>
+        </Card>
+      )}
+       {result && result.contentIdeas && result.contentIdeas.length === 0 && !isLoading && (
+        <Card className="mt-6 shadow-lg">
+          <CardHeader>
+            <CardTitle>No Content Ideas Generated</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>The AI could not generate content ideas based on the provided input. Please try refining your input or try again later.</p>
           </CardContent>
         </Card>
       )}

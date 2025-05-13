@@ -17,9 +17,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import PageHeaderTitle from "@/components/common/page-header-title";
 import MarkdownDisplay from "@/components/common/markdown-display";
+import StatusControl from "@/components/common/StatusControl";
+import type { Status } from "@/types/common";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Loader2, BarChartBig } from "lucide-react";
+import { useInstitutions } from "@/contexts/InstitutionContext";
 
 import type { GeneratePerformanceMarketingStrategyInput, GeneratePerformanceMarketingStrategyOutput } from '@/ai/flows/generate-performance-marketing-strategy';
 import { generatePerformanceMarketingStrategy } from '@/ai/flows/generate-performance-marketing-strategy';
@@ -28,14 +31,18 @@ const formSchema = z.object({
   institutionName: z.string().min(2, "Institution name is required."),
   institutionType: z.string().min(2, "Institution type is required."),
   targetAudience: z.string().min(10, "Target audience description is too short."),
-  programmesOffered: z.string().min(10, "Programmes offered description is too short."),
+  programsOffered: z.string().min(10, "Programs offered description is too short."), // Standardized
   location: z.string().min(2, "Location is required."),
   marketingBudget: z.string().min(1, "Marketing budget is required (e.g., $5000, Flexible)."),
   marketingGoals: z.string().min(10, "Marketing goals description is too short."),
 });
 
+const LOCAL_STORAGE_KEY_PERF_MARKETING = "perfMarketingResult";
+
+
 export default function PerformanceMarketingPage() {
   const { toast } = useToast();
+  const { activeInstitution } = useInstitutions();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<GeneratePerformanceMarketingStrategyOutput | null>(null);
 
@@ -45,17 +52,68 @@ export default function PerformanceMarketingPage() {
       institutionName: "",
       institutionType: "",
       targetAudience: "",
-      programmesOffered: "",
+      programsOffered: "", // Standardized
       location: "",
       marketingBudget: "",
       marketingGoals: "",
     },
   });
 
+  useEffect(() => {
+    if (activeInstitution) {
+      form.reset({
+        institutionName: activeInstitution.name,
+        institutionType: activeInstitution.type,
+        targetAudience: activeInstitution.targetAudience,
+        programsOffered: activeInstitution.programsOffered, // Standardized
+        location: activeInstitution.location,
+        // marketingBudget and marketingGoals are not part of Institution type, so they remain as is or user fills them.
+        marketingBudget: form.getValues("marketingBudget") || "", 
+        marketingGoals: form.getValues("marketingGoals") || "",
+      });
+      setResult(null);
+      localStorage.removeItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
+    } else {
+       form.reset({ // Reset to default if no active institution
+        institutionName: "",
+        institutionType: "",
+        targetAudience: "",
+        programsOffered: "",
+        location: "",
+        marketingBudget: "",
+        marketingGoals: "",
+      });
+      setResult(null);
+      localStorage.removeItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
+    }
+  }, [activeInstitution, form]);
+
+  useEffect(() => {
+    const storedResult = localStorage.getItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
+    if (storedResult) {
+      try {
+        setResult(JSON.parse(storedResult));
+      } catch (error) {
+        console.error("Failed to parse stored perf marketing results:", error);
+        localStorage.removeItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (result) {
+      localStorage.setItem(LOCAL_STORAGE_KEY_PERF_MARKETING, JSON.stringify(result));
+    }
+  }, [result]);
+
+
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
     setResult(null);
+    localStorage.removeItem(LOCAL_STORAGE_KEY_PERF_MARKETING);
     try {
+      // Map form field 'programsOffered' to AI flow's expected 'programmesOffered' if they differ.
+      // However, we standardized to 'programsOffered' in the AI flow as well.
       const data = await generatePerformanceMarketingStrategy(values);
       setResult(data);
       toast({
@@ -74,6 +132,13 @@ export default function PerformanceMarketingPage() {
     }
   }
 
+  const handleDocumentStatusChange = (newStatus: Status) => {
+    setResult(prevResult => {
+      if (!prevResult) return null;
+      return { ...prevResult, documentStatus: newStatus };
+    });
+  };
+
   return (
     <div className="space-y-8">
       <PageHeaderTitle
@@ -85,7 +150,7 @@ export default function PerformanceMarketingPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>Institution &amp; Marketing Goals</CardTitle>
-          <CardDescription>Complete the form to get your AI-generated strategy.</CardDescription>
+          <CardDescription>Complete the form to get your AI-generated strategy. Select an institution or fill details manually.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -137,13 +202,13 @@ export default function PerformanceMarketingPage() {
               />
               <FormField
                 control={form.control}
-                name="programmesOffered"
+                name="programsOffered" // Standardized
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Programmes Offered</FormLabel>
+                    <FormLabel>Programs Offered</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="List or describe key programmes relevant to marketing efforts..."
+                        placeholder="List or describe key programs relevant to marketing efforts..."
                         className="min-h-[100px]"
                         {...field}
                       />
@@ -212,7 +277,7 @@ export default function PerformanceMarketingPage() {
         </CardContent>
       </Card>
 
-      {isLoading && (
+      {isLoading && !result && (
         <div className="text-center py-4">
           <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
           <p className="mt-2 text-muted-foreground">Crafting your performance marketing strategy...</p>
@@ -220,8 +285,27 @@ export default function PerformanceMarketingPage() {
       )}
 
       {result && result.marketingStrategyDocument && (
-        <MarkdownDisplay title="Generated Performance Marketing Strategy" content={result.marketingStrategyDocument} />
+        <Card className="mt-6 shadow-lg">
+          <CardHeader className="flex flex-row justify-between items-center">
+            <CardTitle>Generated Performance Marketing Strategy</CardTitle>
+            <StatusControl
+              currentStatus={result.documentStatus}
+              onStatusChange={handleDocumentStatusChange}
+            />
+          </CardHeader>
+          <CardContent>
+            <MarkdownDisplay content={result.marketingStrategyDocument} asCard={false} />
+          </CardContent>
+        </Card>
       )}
+      {result && !result.marketingStrategyDocument && !isLoading && (
+         <Card className="mt-6 shadow-lg">
+           <CardHeader><CardTitle>No Strategy Generated</CardTitle></CardHeader>
+           <CardContent>
+             <p>The AI could not generate a performance marketing strategy based on the provided input. Please try refining your input or try again later.</p>
+           </CardContent>
+         </Card>
+       )}
     </div>
   );
 }

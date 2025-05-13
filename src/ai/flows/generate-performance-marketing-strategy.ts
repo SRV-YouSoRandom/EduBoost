@@ -10,6 +10,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import type { Status } from '@/types/common';
 
 const GeneratePerformanceMarketingStrategyInputSchema = z.object({
   institutionName: z.string().describe('The name of the educational institution.'),
@@ -23,9 +24,9 @@ const GeneratePerformanceMarketingStrategyInputSchema = z.object({
     .describe(
       'The target audience for the marketing strategy (e.g., prospective students, parents). Detail demographics, interests, and online behavior if known.'
     ),
-  programmesOffered: z
+  programsOffered: z // Standardized from programmesOffered
     .string()
-    .describe('A description of the key programmes offered by the institution relevant for marketing.'),
+    .describe('A description of the key programs offered by the institution relevant for marketing.'),
   location: z.string().describe('The geographical location/target market of the educational institution (e.g., city, region, national, international).'),
   marketingBudget: z
     .string()
@@ -42,6 +43,7 @@ const GeneratePerformanceMarketingStrategyOutputSchema = z.object({
     .describe(
       'A detailed performance marketing strategy as a well-formatted markdown document. This document should outline recommended platforms (especially Google Ads), budget allocation, KPIs, and content suggestions.'
     ),
+  documentStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the entire marketing strategy document.'),
 });
 export type GeneratePerformanceMarketingStrategyOutput = z.infer<
   typeof GeneratePerformanceMarketingStrategyOutputSchema
@@ -53,10 +55,15 @@ export async function generatePerformanceMarketingStrategy(
   return generatePerformanceMarketingStrategyFlow(input);
 }
 
+// AI output schema remains a single string
+const AIPromptOutputSchema = z.object({
+  marketingStrategyDocument: z.string().describe('Markdown document content')
+});
+
 const prompt = ai.definePrompt({
   name: 'generatePerformanceMarketingStrategyPrompt',
   input: {schema: GeneratePerformanceMarketingStrategyInputSchema},
-  output: {schema: GeneratePerformanceMarketingStrategyOutputSchema},
+  output: {schema: AIPromptOutputSchema}, // AI produces the markdown string
   prompt: `You are an expert performance marketing strategist specializing in educational institutions, with extensive experience using Google Marketing Platform tools like Google Ads and Google Analytics.
 
   Based on the information provided, develop a comprehensive performance marketing strategy.
@@ -65,7 +72,7 @@ const prompt = ai.definePrompt({
   Institution Name: {{{institutionName}}}
   Institution Type: {{{institutionType}}}
   Target Audience: {{{targetAudience}}}
-  Programmes Offered: {{{programmesOffered}}}
+  Programs Offered: {{{programsOffered}}}
   Location/Target Market: {{{location}}}
   Marketing Budget: {{{marketingBudget}}}
   Marketing Goals: {{{marketingGoals}}}
@@ -82,7 +89,7 @@ const prompt = ai.definePrompt({
 
   ## 3. Recommended Platforms & Strategy
   - **Google Ads (Primary Focus):**
-    - **Search Campaigns:** Suggest campaign structure, ad group themes based on '{{{programmesOffered}}}' and '{{{marketingGoals}}}'. Provide 2-3 example ad copy headlines and descriptions. Recommend keyword match types.
+    - **Search Campaigns:** Suggest campaign structure, ad group themes based on '{{{programsOffered}}}' and '{{{marketingGoals}}}'. Provide 2-3 example ad copy headlines and descriptions. Recommend keyword match types.
     - **Display Campaigns:** When and how to use Display campaigns (e.g., remarketing, awareness). Suggest targeting options.
     - **YouTube Campaigns:** If relevant for '{{{targetAudience}}}', suggest video ad formats (e.g., in-stream, discovery) and targeting.
     - **Performance Max Campaigns:** Discuss potential benefits for achieving '{{{marketingGoals}}}'.
@@ -103,7 +110,7 @@ const prompt = ai.definePrompt({
     - View-through conversions for video/display.
 
   ## 6. Content & Creative Suggestions
-  - **Ad Copy:** Emphasize clear Calls to Action (CTAs) and highlighting Unique Selling Points from '{{{programmesOffered}}}'.
+  - **Ad Copy:** Emphasize clear Calls to Action (CTAs) and highlighting Unique Selling Points from '{{{programsOffered}}}'.
   - **Landing Pages:** Importance of dedicated, optimized landing pages for ad campaigns.
   - **Visuals:** Briefly suggest types of visuals for display or video ads.
 
@@ -121,14 +128,20 @@ const generatePerformanceMarketingStrategyFlow = ai.defineFlow(
   {
     name: 'generatePerformanceMarketingStrategyFlow',
     inputSchema: GeneratePerformanceMarketingStrategyInputSchema,
-    outputSchema: GeneratePerformanceMarketingStrategyOutputSchema,
+    outputSchema: GeneratePerformanceMarketingStrategyOutputSchema, // Flow output includes status
   },
-  async input => {
-    const {output} = await prompt(input);
-    if (!output || !output.marketingStrategyDocument) {
-      // Fallback or error handling if AI fails to generate the document
-      return { marketingStrategyDocument: "# Error\n\nFailed to generate performance marketing strategy. Please try again." };
+  async (input): Promise<GeneratePerformanceMarketingStrategyOutput> => {
+    const {output: aiOutput} = await prompt(input);
+    if (aiOutput && aiOutput.marketingStrategyDocument) {
+      return { 
+        marketingStrategyDocument: aiOutput.marketingStrategyDocument,
+        documentStatus: 'pending',
+      };
     }
-    return output;
+    // Fallback or error handling if AI fails to generate the document
+    return { 
+      marketingStrategyDocument: "# Error\n\nFailed to generate performance marketing strategy. Please try again.",
+      documentStatus: 'pending',
+    };
   }
 );

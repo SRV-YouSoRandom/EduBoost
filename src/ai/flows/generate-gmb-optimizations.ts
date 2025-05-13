@@ -10,6 +10,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import type { Status } from '@/types/common';
 
 const GenerateGMBOptimizationsInputSchema = z.object({
   institutionName: z.string().describe('The name of the educational institution.'),
@@ -23,8 +24,11 @@ export type GenerateGMBOptimizationsInput = z.infer<typeof GenerateGMBOptimizati
 
 const GenerateGMBOptimizationsOutputSchema = z.object({
   keywordSuggestions: z.string().describe('A markdown list of keyword suggestions for the GMB profile.'),
+  keywordSuggestionsStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Status for keyword suggestions.'),
   descriptionSuggestions: z.string().describe('Suggested GMB business description in markdown format, highlighting unique selling points and programs.'),
+  descriptionSuggestionsStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Status for description suggestions.'),
   optimizationTips: z.string().describe('Additional GMB optimization tips in markdown format, covering posts, Q&A, photos, services, and reviews, referencing Google My Business features.'),
+  optimizationTipsStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Status for optimization tips.'),
 });
 export type GenerateGMBOptimizationsOutput = z.infer<typeof GenerateGMBOptimizationsOutputSchema>;
 
@@ -32,10 +36,18 @@ export async function generateGMBOptimizations(input: GenerateGMBOptimizationsIn
   return generateGMBOptimizationsFlow(input);
 }
 
+// Prompt output schema remains simpler
+const PromptOutputSchema = z.object({
+  keywordSuggestions: z.string().describe('A markdown list of keyword suggestions for the GMB profile.'),
+  descriptionSuggestions: z.string().describe('Suggested GMB business description in markdown format, highlighting unique selling points and programs.'),
+  optimizationTips: z.string().describe('Additional GMB optimization tips in markdown format, covering posts, Q&A, photos, services, and reviews, referencing Google My Business features.'),
+});
+
+
 const prompt = ai.definePrompt({
   name: 'generateGMBOptimizationsPrompt',
   input: {schema: GenerateGMBOptimizationsInputSchema},
-  output: {schema: GenerateGMBOptimizationsOutputSchema},
+  output: {schema: PromptOutputSchema}, // AI generates the content strings
   prompt: `You are an expert in Google My Business (GMB) optimization for educational institutions, leveraging all features of the GMB platform.
 
   Based on the information provided, generate specific, actionable recommendations for optimizing their GMB profile.
@@ -91,17 +103,28 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
   {
     name: 'generateGMBOptimizationsFlow',
     inputSchema: GenerateGMBOptimizationsInputSchema,
-    outputSchema: GenerateGMBOptimizationsOutputSchema,
+    outputSchema: GenerateGMBOptimizationsOutputSchema, // Flow output includes statuses
   },
-  async input => {
+  async (input): Promise<GenerateGMBOptimizationsOutput> => {
     const {output} = await prompt(input);
-     if (!output || !output.keywordSuggestions || !output.descriptionSuggestions || !output.optimizationTips) {
+     if (output && output.keywordSuggestions && output.descriptionSuggestions && output.optimizationTips) {
       return { 
-        keywordSuggestions: "- Error: Could not generate keyword suggestions.",
-        descriptionSuggestions: "Error: Could not generate description suggestions.",
-        optimizationTips: "- Error: Could not generate optimization tips."
+        keywordSuggestions: output.keywordSuggestions,
+        keywordSuggestionsStatus: 'pending',
+        descriptionSuggestions: output.descriptionSuggestions,
+        descriptionSuggestionsStatus: 'pending',
+        optimizationTips: output.optimizationTips,
+        optimizationTipsStatus: 'pending',
       };
     }
-    return output;
+    // Fallback error structure matching the output schema
+    return { 
+      keywordSuggestions: "- Error: Could not generate keyword suggestions.",
+      keywordSuggestionsStatus: 'pending',
+      descriptionSuggestions: "Error: Could not generate description suggestions.",
+      descriptionSuggestionsStatus: 'pending',
+      optimizationTips: "- Error: Could not generate optimization tips.",
+      optimizationTipsStatus: 'pending',
+    };
   }
 );

@@ -12,6 +12,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import type { Status } from '@/types/common'; // Import Status type
 
 const GenerateContentIdeasInputSchema = z.object({
   institutionName: z.string().describe('The name of the educational institution.'),
@@ -36,10 +37,17 @@ export type GenerateContentIdeasInput = z.infer<
   typeof GenerateContentIdeasInputSchema
 >;
 
+const ContentIdeaWithStatusSchema = z.object({
+  id: z.string().describe('Unique identifier for the content idea.'),
+  text: z.string().describe('The content idea text.'),
+  status: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the content idea.'),
+});
+export type ContentIdeaWithStatus = z.infer<typeof ContentIdeaWithStatusSchema>;
+
 const GenerateContentIdeasOutputSchema = z.object({
   contentIdeas: z
-    .array(z.string())
-    .describe('A list of content ideas tailored to the educational institution.'),
+    .array(ContentIdeaWithStatusSchema)
+    .describe('A list of content ideas tailored to the educational institution, each with an ID and status.'),
 });
 export type GenerateContentIdeasOutput = z.infer<
   typeof GenerateContentIdeasOutputSchema
@@ -51,21 +59,34 @@ export async function generateContentIdeas(
   return generateContentIdeasFlow(input);
 }
 
+// Prompt output schema remains as array of strings
+const PromptOutputSchema = z.object({
+  contentIdeas: z.array(z.string()).describe('A list of content idea strings.'),
+});
+
 const prompt = ai.definePrompt({
   name: 'generateContentIdeasPrompt',
   input: {schema: GenerateContentIdeasInputSchema},
-  output: {schema: GenerateContentIdeasOutputSchema},
-  prompt: `You are a creative content strategist specializing in the educational sector. Generate content ideas for {{institutionName}}, a {{institutionType}}, targeting {{targetAudience}}. The institution offers the following programs: {{programsOffered}}. Its unique selling points are: {{uniqueSellingPoints}}. Please provide a list of content ideas that will resonate with the target audience.`,
+  output: {schema: PromptOutputSchema}, // AI generates strings
+  prompt: `You are a creative content strategist specializing in the educational sector. Generate content ideas for {{institutionName}}, a {{institutionType}}, targeting {{targetAudience}}. The institution offers the following programs: {{programsOffered}}. Its unique selling points are: {{uniqueSellingPoints}}. Please provide a list of content ideas that will resonate with the target audience. Ensure each idea is a distinct string in the array.`,
 });
 
 const generateContentIdeasFlow = ai.defineFlow(
   {
     name: 'generateContentIdeasFlow',
     inputSchema: GenerateContentIdeasInputSchema,
-    outputSchema: GenerateContentIdeasOutputSchema,
+    outputSchema: GenerateContentIdeasOutputSchema, // Flow output schema includes status
   },
-  async input => {
+  async (input): Promise<GenerateContentIdeasOutput> => {
     const {output} = await prompt(input);
-    return output!;
+    if (output && output.contentIdeas) {
+      const ideasWithStatus: ContentIdeaWithStatus[] = output.contentIdeas.map((ideaText) => ({
+        id: crypto.randomUUID(),
+        text: ideaText,
+        status: 'pending' as Status,
+      }));
+      return { contentIdeas: ideasWithStatus };
+    }
+    return { contentIdeas: [] }; // Fallback or error case
   }
 );
