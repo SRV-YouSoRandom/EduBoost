@@ -10,62 +10,30 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
 import type { Status } from '@/types/common';
+import {
+  GenerateGMBOptimizationsInputSchema,
+  GenerateGMBOptimizationsOutputSchema,
+  GMBKeywordSuggestionSchema, // Re-export GMBKeywordSuggestion type as well if needed
+  GMBAIPromptOutputSchema,
+  AIKeywordSuggestionSchema, // If this is needed by other files, export from schema file too.
+} from '@/ai/schemas/gmb-optimizer-schemas';
 
-const GenerateGMBOptimizationsInputSchema = z.object({
-  institutionName: z.string().describe('The name of the educational institution.'),
-  institutionType: z.string().describe('The type of educational institution (e.g., university, high school, elementary school).'),
-  location: z.string().describe('The location of the institution (city, state).'),
-  programsOffered: z.string().describe('A description of the programs and courses offered.'),
-  targetAudience: z.string().describe('The target audience of the institution (e.g., prospective students, parents).'),
-  uniqueSellingPoints: z.string().describe('The unique selling points or advantages of the institution.'),
-});
-export type GenerateGMBOptimizationsInput = z.infer<typeof GenerateGMBOptimizationsInputSchema>;
+export type { 
+  GenerateGMBOptimizationsInput, 
+  GenerateGMBOptimizationsOutput,
+  GMBKeywordSuggestion 
+} from '@/ai/schemas/gmb-optimizer-schemas';
 
-const GMBKeywordSuggestionSchema = z.object({
-  id: z.string().describe('Unique identifier for the keyword suggestion.'),
-  text: z.string().describe('The keyword suggestion text.'),
-  status: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the keyword suggestion.'),
-  searchVolumeLast24h: z.string().optional().describe('Estimated search volume in the last 24 hours for the given location. (e.g., "approx 50 searches", "low", "data unavailable")'),
-  searchVolumeLast7d: z.string().optional().describe('Estimated search volume in the last 7 days for the given location. (e.g., "approx 350 searches", "medium", "data unavailable")'),
-});
-export type GMBKeywordSuggestion = z.infer<typeof GMBKeywordSuggestionSchema>;
 
-const GenerateGMBOptimizationsOutputSchema = z.object({
-  keywordSuggestions: z.array(GMBKeywordSuggestionSchema).describe('A list of keyword suggestions for the GMB profile, each with status and estimated search volume.'),
-  // keywordSuggestionsStatus is now implicitly handled by each item's status, or could be an overall status for the generation process itself.
-  // Keeping it as an overall status for the section for now.
-  keywordSuggestionsSectionStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Overall status for the keyword suggestions section.'),
-  descriptionSuggestions: z.string().describe('Suggested GMB business description in markdown format, highlighting unique selling points and programs.'),
-  descriptionSuggestionsStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Status for description suggestions.'),
-  optimizationTips: z.string().describe('Additional GMB optimization tips in markdown format, covering posts, Q&A, photos, services, and reviews, referencing Google My Business features.'),
-  optimizationTipsStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('Status for optimization tips.'),
-});
-export type GenerateGMBOptimizationsOutput = z.infer<typeof GenerateGMBOptimizationsOutputSchema>;
-
-export async function generateGMBOptimizations(input: GenerateGMBOptimizationsInput): Promise<GenerateGMBOptimizationsOutput> {
+export async function generateGMBOptimizations(input: import('@/ai/schemas/gmb-optimizer-schemas').GenerateGMBOptimizationsInput): Promise<import('@/ai/schemas/gmb-optimizer-schemas').GenerateGMBOptimizationsOutput> {
   return generateGMBOptimizationsFlow(input);
 }
-
-// AI output schema for keywords
-const AIKeywordSuggestionSchema = z.object({
-  text: z.string().describe('The keyword suggestion text.'),
-  searchVolumeLast24h: z.string().optional().describe('Estimated search volume in the last 24 hours for the given location. (e.g., "approx 50 searches", "low", "data unavailable")'),
-  searchVolumeLast7d: z.string().optional().describe('Estimated search volume in the last 7 days for the given location. (e.g., "approx 350 searches", "medium", "data unavailable")'),
-});
-
-const PromptOutputSchema = z.object({
-  keywordSuggestions: z.array(AIKeywordSuggestionSchema).describe('An array of keyword suggestion objects for the GMB profile, including estimated search volumes.'),
-  descriptionSuggestions: z.string().describe('Suggested GMB business description in markdown format, highlighting unique selling points and programs.'),
-  optimizationTips: z.string().describe('Additional GMB optimization tips in markdown format, covering posts, Q&A, photos, services, and reviews, referencing Google My Business features.')
-});
-
 
 const prompt = ai.definePrompt({
   name: 'generateGMBOptimizationsPrompt',
   input: {schema: GenerateGMBOptimizationsInputSchema},
-  output: {schema: PromptOutputSchema},
+  output: {schema: GMBAIPromptOutputSchema}, // AI returns this structure
   prompt: `You are an expert in Google My Business (GMB) optimization for educational institutions, leveraging all features of the GMB platform.
 
   Based on the information provided:
@@ -115,10 +83,10 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
     inputSchema: GenerateGMBOptimizationsInputSchema,
     outputSchema: GenerateGMBOptimizationsOutputSchema,
   },
-  async (input): Promise<GenerateGMBOptimizationsOutput> => {
-    const {output} = await prompt(input);
-     if (output && output.keywordSuggestions && output.descriptionSuggestions && output.optimizationTips) {
-      const mappedKeywordSuggestions: GMBKeywordSuggestion[] = output.keywordSuggestions.map(kw => ({
+  async (input): Promise<import('@/ai/schemas/gmb-optimizer-schemas').GenerateGMBOptimizationsOutput> => {
+    const {output: aiOutput} = await prompt(input);
+     if (aiOutput && aiOutput.keywordSuggestions && aiOutput.descriptionSuggestions && aiOutput.optimizationTips) {
+      const mappedKeywordSuggestions: import('@/ai/schemas/gmb-optimizer-schemas').GMBKeywordSuggestion[] = aiOutput.keywordSuggestions.map(kw => ({
         id: crypto.randomUUID(),
         text: kw.text,
         status: 'pending' as Status,
@@ -128,11 +96,11 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
       
       return { 
         keywordSuggestions: mappedKeywordSuggestions,
-        keywordSuggestionsSectionStatus: 'pending',
-        descriptionSuggestions: output.descriptionSuggestions,
-        descriptionSuggestionsStatus: 'pending',
-        optimizationTips: output.optimizationTips,
-        optimizationTipsStatus: 'pending',
+        keywordSuggestionsSectionStatus: 'pending', // Default status for the section
+        descriptionSuggestions: aiOutput.descriptionSuggestions,
+        descriptionSuggestionsStatus: 'pending', // Default status
+        optimizationTips: aiOutput.optimizationTips,
+        optimizationTipsStatus: 'pending', // Default status
       };
     }
     // Fallback error structure matching the output schema
@@ -146,9 +114,3 @@ const generateGMBOptimizationsFlow = ai.defineFlow(
     };
   }
 );
-
-// Ensure this file only exports the async function and types if it's being treated as a server action module.
-// Schemas are defined above but not exported if GenerateGMBOptimizationsInputSchema is causing issues.
-// For now, assuming the current export structure is fine based on prior fixes focusing on top-level exports.
-// If error persists for this file, GenerateGMBOptimizationsInputSchema might need to be moved.
-

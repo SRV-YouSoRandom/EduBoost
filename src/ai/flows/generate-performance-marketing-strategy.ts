@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -9,61 +10,30 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
 import type { Status } from '@/types/common';
+import {
+  GeneratePerformanceMarketingStrategyInputSchema,
+  GeneratePerformanceMarketingStrategyOutputSchema,
+  PerformanceMarketingAIPromptOutputSchema,
+} from '@/ai/schemas/performance-marketing-schemas';
 
-const GeneratePerformanceMarketingStrategyInputSchema = z.object({
-  institutionName: z.string().describe('The name of the educational institution.'),
-  institutionType: z
-    .string()
-    .describe(
-      'The type of educational institution (e.g., university, college, vocational school).'
-    ),
-  targetAudience: z
-    .string()
-    .describe(
-      'The target audience for the marketing strategy (e.g., prospective students, parents). Detail demographics, interests, and online behavior if known.'
-    ),
-  programsOffered: z // Standardized from programmesOffered
-    .string()
-    .describe('A description of the key programs offered by the institution relevant for marketing.'),
-  location: z.string().describe('The geographical location/target market of the educational institution (e.g., city, region, national, international).'),
-  marketingBudget: z
-    .string()
-    .describe('The approximate marketing budget (e.g., "$500/month", "Flexible up to $10k/quarter").'),
-  marketingGoals: z.string().describe('The primary goals of the marketing campaign (e.g., "Increase enrollment by 10%", "Generate 50 leads for X program", "Improve brand awareness in Y region").'),
-});
-export type GeneratePerformanceMarketingStrategyInput = z.infer<
-  typeof GeneratePerformanceMarketingStrategyInputSchema
->;
+export type { 
+  GeneratePerformanceMarketingStrategyInput, 
+  GeneratePerformanceMarketingStrategyOutput 
+} from '@/ai/schemas/performance-marketing-schemas';
 
-const GeneratePerformanceMarketingStrategyOutputSchema = z.object({
-  marketingStrategyDocument: z
-    .string()
-    .describe(
-      'A detailed performance marketing strategy as a well-formatted markdown document. This document should outline recommended platforms (especially Google Ads), budget allocation, KPIs, and content suggestions.'
-    ),
-  documentStatus: z.enum(['pending', 'inProgress', 'done', 'rejected']).default('pending' as Status).describe('The status of the entire marketing strategy document.'),
-});
-export type GeneratePerformanceMarketingStrategyOutput = z.infer<
-  typeof GeneratePerformanceMarketingStrategyOutputSchema
->;
 
 export async function generatePerformanceMarketingStrategy(
-  input: GeneratePerformanceMarketingStrategyInput
-): Promise<GeneratePerformanceMarketingStrategyOutput> {
+  input: import('@/ai/schemas/performance-marketing-schemas').GeneratePerformanceMarketingStrategyInput
+): Promise<import('@/ai/schemas/performance-marketing-schemas').GeneratePerformanceMarketingStrategyOutput> {
   return generatePerformanceMarketingStrategyFlow(input);
 }
 
-// AI output schema remains a single string
-const AIPromptOutputSchema = z.object({
-  marketingStrategyDocument: z.string().describe('Markdown document content')
-});
 
 const prompt = ai.definePrompt({
   name: 'generatePerformanceMarketingStrategyPrompt',
   input: {schema: GeneratePerformanceMarketingStrategyInputSchema},
-  output: {schema: AIPromptOutputSchema}, // AI produces the markdown string
+  output: {schema: PerformanceMarketingAIPromptOutputSchema}, // AI produces the markdown string
   prompt: `You are an expert performance marketing strategist specializing in educational institutions, with extensive experience using Google Marketing Platform tools like Google Ads and Google Analytics.
 
   Based on the information provided, develop a comprehensive performance marketing strategy.
@@ -130,18 +100,19 @@ const generatePerformanceMarketingStrategyFlow = ai.defineFlow(
     inputSchema: GeneratePerformanceMarketingStrategyInputSchema,
     outputSchema: GeneratePerformanceMarketingStrategyOutputSchema, // Flow output includes status
   },
-  async (input): Promise<GeneratePerformanceMarketingStrategyOutput> => {
+  async (input): Promise<import('@/ai/schemas/performance-marketing-schemas').GeneratePerformanceMarketingStrategyOutput> => {
     const {output: aiOutput} = await prompt(input);
     if (aiOutput && aiOutput.marketingStrategyDocument) {
       return { 
         marketingStrategyDocument: aiOutput.marketingStrategyDocument,
-        documentStatus: 'pending',
+        documentStatus: 'pending' as Status, // Set default status
       };
     }
     // Fallback or error handling if AI fails to generate the document
     return { 
       marketingStrategyDocument: "# Error\n\nFailed to generate performance marketing strategy. Please try again.",
-      documentStatus: 'pending',
+      documentStatus: 'pending' as Status, // Default status even for error
     };
   }
 );
+

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -27,10 +28,10 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 
-import type { GenerateContentIdeasInput, GenerateContentIdeasOutput, ContentIdeaWithStatus } from '@/ai/schemas/content-ideas-schemas'; // Updated import
+import type { GenerateContentIdeasInput, GenerateContentIdeasOutput, ContentIdeaWithStatus } from '@/ai/schemas/content-ideas-schemas';
 import { generateContentIdeas } from '@/ai/flows/generate-content-ideas';
-import { expandContentIdea } from '@/ai/flows/expand-content-idea';
-import type { ExpandContentIdeaInput } from '@/ai/schemas/content-ideas-schemas'; // Updated import
+import { expandContentIdea, ExpandContentIdeaInput } from '@/ai/flows/expand-content-idea';
+import { refineContentIdeas, RefineContentIdeasInput } from '@/ai/flows/refine-content-ideas';
 
 
 const formSchema = z.object({
@@ -45,10 +46,13 @@ const PAGE_STORAGE_PREFIX = "contentIdeasResult";
 
 export default function ContentIdeasPage() {
   const { toast } = useToast();
-  const { activeInstitution } = useInstitutions();
-  const [isLoading, setIsLoading] = useState(false); // For generating new list
+  const { activeInstitution, isLoading: isInstitutionLoading } = useInstitutions();
+  const [isGenerating, setIsGenerating] = useState(false); 
+  const [isRefining, setIsRefining] = useState(false);
   const [result, setResult] = useState<GenerateContentIdeasOutput | null>(null);
   const [openCollapsibles, setOpenCollapsibles] = useState<Record<string, boolean>>({});
+  const [refinementPrompt, setRefinementPrompt] = useState("");
+  const [isPageLoading, setIsPageLoading] = useState(true);
 
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -70,6 +74,7 @@ export default function ContentIdeasPage() {
   };
   
   useEffect(() => {
+    setIsPageLoading(true);
     if (activeInstitution) {
       form.reset({
         institutionName: activeInstitution.name,
@@ -101,23 +106,25 @@ export default function ContentIdeasPage() {
       setResult(null); 
     }
     setOpenCollapsibles({}); 
-  }, [activeInstitution, form]);
+    setIsPageLoading(false);
+  }, [activeInstitution]);
 
 
   useEffect(() => {
-    const key = getCurrentStorageKey();
-    if (key && result) {
-      localStorage.setItem(key, JSON.stringify(result));
-    } else if (key && !result) {
-      localStorage.removeItem(key);
+    if (!isPageLoading) {
+      const key = getCurrentStorageKey();
+      if (key && result) {
+        localStorage.setItem(key, JSON.stringify(result));
+      } else if (key && !result) {
+        localStorage.removeItem(key);
+      }
     }
-  }, [result, activeInstitution?.id]);
+  }, [result, activeInstitution?.id, isPageLoading]);
 
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    setIsLoading(true);
-    // When generating a new list, previous results are replaced.
-    // setResult(null); // Explicitly clear if you want loading state to show "generating new" vs "loading old"
+  async function onInitialSubmit(values: z.infer<typeof formSchema>) {
+    setIsGenerating(true);
+    setResult(null); 
     try {
       const data = await generateContentIdeas(values);
       setResult(data); 
@@ -132,8 +139,44 @@ export default function ContentIdeasPage() {
         description: (error as Error).message || "Could not generate content ideas. Please try again.",
         variant: "destructive",
       });
+      setResult(null);
     } finally {
-      setIsLoading(false);
+      setIsGenerating(false);
+    }
+  }
+
+  async function handleRefineIdeas() {
+    if (!result || !refinementPrompt.trim() || !activeInstitution) {
+      toast({ title: "Cannot refine", description: "Existing ideas, a refinement prompt, and an active institution are required.", variant: "destructive" });
+      return;
+    }
+    setIsRefining(true);
+    try {
+      const institutionContext: GenerateContentIdeasInput = {
+        institutionName: activeInstitution.name,
+        institutionType: activeInstitution.type,
+        targetAudience: activeInstitution.targetAudience,
+        programsOffered: activeInstitution.programsOffered,
+        uniqueSellingPoints: activeInstitution.uniqueSellingPoints,
+      };
+      const refineInput: RefineContentIdeasInput = {
+        currentIdeas: result,
+        userPrompt: refinementPrompt,
+        institutionContext: institutionContext,
+      };
+      const updatedIdeas = await refineContentIdeas(refineInput);
+      setResult(updatedIdeas);
+      setRefinementPrompt("");
+      toast({ title: "Ideas Refined!", description: "The content ideas list has been updated." });
+    } catch (error) {
+      console.error("Error refining content ideas:", error);
+      toast({
+        title: "Error Refining Ideas",
+        description: (error as Error).message || "Could not refine content ideas.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefining(false);
     }
   }
 
@@ -161,7 +204,7 @@ export default function ContentIdeasPage() {
     setResult(prev => prev ? ({
       ...prev,
       contentIdeas: prev.contentIdeas.map(idea => 
-        idea.id === ideaId ? { ...idea, isExpanding: true, expandedDetails: isRegeneration ? undefined : idea.expandedDetails } : idea // Clear old details if regenerating
+        idea.id === ideaId ? { ...idea, isExpanding: true, expandedDetails: isRegeneration ? undefined : idea.expandedDetails } : idea
       ),
     }) : null);
 
@@ -191,7 +234,6 @@ export default function ContentIdeasPage() {
         title: isRegeneration ? "Details Re-generated!" : "Idea Expanded!",
         description: "Details have been successfully generated for the content idea. Check the expanded section.",
       });
-      // Ensure the collapsible for this item is open after expansion
       setOpenCollapsibles(prev => ({ ...prev, [ideaId]: true }));
     } catch (error) {
       console.error("Error expanding content idea:", error);
@@ -224,6 +266,21 @@ export default function ContentIdeasPage() {
     setOpenCollapsibles(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  if (isInstitutionLoading || isPageLoading) {
+    return (
+      <div className="space-y-8">
+        <PageHeaderTitle
+          title="Loading Content Ideas..."
+          description="Please wait while we load your data."
+          icon={Loader2}
+        />
+        <div className="text-center py-10">
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-8">
@@ -233,120 +290,152 @@ export default function ContentIdeasPage() {
         icon={Lightbulb}
       />
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Institution Profile</CardTitle>
-          <CardDescription>Tell us about your institution to get relevant content ideas. Select an institution or fill details manually.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input placeholder="e.g., Future Innovators Academy" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <FormField control={form.control} name="institutionType" render={({ field }) => (<FormItem><FormLabel>Institution Type</FormLabel><FormControl><Input placeholder="e.g., K-12 School" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              </div>
-              <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem><FormLabel>Target Audience</FormLabel><FormControl><Textarea placeholder="Who is this content for?" className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem><FormLabel>Programs Offered</FormLabel><FormControl><Textarea placeholder="Describe key programs..." className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              <FormField control={form.control} name="uniqueSellingPoints" render={({ field }) => (<FormItem><FormLabel>Unique Selling Points</FormLabel><FormControl><Textarea placeholder="What makes your institution special?" className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              <Button type="submit" disabled={isLoading || !activeInstitution} className="w-full md:w-auto">
-                {isLoading ? ( <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
-                ) : result && result.contentIdeas.length > 0 ? "Re-generate Content Ideas" : "Generate Content Ideas"}
-              </Button>
-               {!activeInstitution && <p className="text-sm text-destructive mt-2">Please select or create an institution to generate ideas.</p>}
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+      {result && result.contentIdeas && result.contentIdeas.length > 0 && activeInstitution && (
+        <>
+          <Card className="mt-6 shadow-lg">
+            <CardHeader>
+              <CardTitle>Generated Content Ideas for {activeInstitution.name}</CardTitle>
+              <CardDescription>Manage status and expand ideas for details like scripts or outlines. Click an idea to see more.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {result.contentIdeas.map((idea: ContentIdeaWithStatus) => (
+                  <li 
+                    key={idea.id} 
+                    className={cn(
+                      "p-4 rounded-lg border bg-card",
+                      getStatusSpecificStyling(idea.status)
+                    )}
+                  >
+                    <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <CollapsibleTrigger asChild>
+                          <Button variant="ghost" className="flex-1 justify-start text-left px-0 hover:bg-transparent text-base">
+                             <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
+                             <span className="flex-1 font-medium">{idea.text}</span>
+                          </Button>
+                        </CollapsibleTrigger>
+                         <div className="flex items-center gap-2 flex-shrink-0 md:ml-4">
+                          <StatusControl
+                            currentStatus={idea.status}
+                            onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
+                            size="sm"
+                          />
+                        </div>
+                      </div>
+                      <CollapsibleContent className="mt-4 pt-4 border-t space-y-3">
+                        {idea.isExpanding && (
+                          <div className="flex items-center text-muted-foreground">
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating details...
+                          </div>
+                        )}
+                        {!idea.isExpanding && idea.expandedDetails && (
+                          <>
+                            <MarkdownDisplay content={idea.expandedDetails} asCard={false} />
+                             <Button variant="outline" size="sm" onClick={() => handleExpandIdea(idea.id, true)} className="mt-2 text-primary border-primary hover:bg-primary/10" disabled={idea.isExpanding || !activeInstitution || isRefining}>
+                               {idea.isExpanding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+                               Re-generate Details
+                             </Button>
+                          </>
+                        )}
+                         {!idea.isExpanding && !idea.expandedDetails && (
+                          <div className="text-center py-2">
+                            <p className="text-sm text-muted-foreground mb-2">No details generated yet for this idea.</p>
+                            <Button variant="default" size="sm" onClick={() => handleExpandIdea(idea.id, false)} disabled={!activeInstitution || isRefining}>
+                              <Sparkles className="mr-2 h-4 w-4" /> Get Details / Script
+                            </Button>
+                          </div>
+                         )}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
 
-      {isLoading && ( // Show spinner if actively generating new list
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center"><Wand2 className="mr-2 h-5 w-5" />Refine Content Ideas</CardTitle>
+              <CardDescription>Provide a prompt to modify the current list of ideas (e.g., "Add more ideas for video content", "Focus on STEM programs").</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Textarea
+                placeholder="Enter your refinement prompt here..."
+                value={refinementPrompt}
+                onChange={(e) => setRefinementPrompt(e.target.value)}
+                className="min-h-[100px]"
+              />
+              <Button onClick={handleRefineIdeas} disabled={isRefining || !refinementPrompt.trim() || isGenerating}>
+                {isRefining ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Refining...</> : "Refine Ideas"}
+              </Button>
+            </CardContent>
+          </Card>
+          
+          <Card className="shadow-lg">
+             <CardHeader>
+               <CardTitle>Start Over: Generate New Ideas</CardTitle>
+               <CardDescription>This will replace the current list of ideas for {activeInstitution.name}.</CardDescription>
+             </CardHeader>
+             <CardContent>
+               <Form {...form}>
+                 <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
+                   {/* Form fields are pre-filled from activeInstitution, display them as read-only or enable for override */}
+                   <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input {...field} readOnly={!!activeInstitution} /></FormControl><FormMessage /></FormItem>)} />
+                   {/* Add other relevant fields if needed for re-generation context, or ensure they are used from activeInstitution */}
+                   <Button type="submit" disabled={isGenerating || !activeInstitution || isRefining} className="w-full md:w-auto">
+                     {isGenerating ? ( <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                     ) : "Generate New Content Ideas"}
+                   </Button>
+                 </form>
+               </Form>
+             </CardContent>
+           </Card>
+        </>
+      )}
+
+      {(!result || result.contentIdeas.length === 0) && activeInstitution && !isGenerating && (
+         <Card className="shadow-lg">
+           <CardHeader>
+             <CardTitle>No Content Ideas for {activeInstitution.name}</CardTitle>
+             <CardDescription>Tell us about your institution to get relevant content ideas.</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <Form {...form}>
+               <form onSubmit={form.handleSubmit(onInitialSubmit)} className="space-y-6">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <FormField control={form.control} name="institutionName" render={({ field }) => (<FormItem><FormLabel>Institution Name</FormLabel><FormControl><Input placeholder="e.g., Future Innovators Academy" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                   <FormField control={form.control} name="institutionType" render={({ field }) => (<FormItem><FormLabel>Institution Type</FormLabel><FormControl><Input placeholder="e.g., K-12 School" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                 </div>
+                 <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem><FormLabel>Target Audience</FormLabel><FormControl><Textarea placeholder="Who is this content for?" className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                 <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem><FormLabel>Programs Offered</FormLabel><FormControl><Textarea placeholder="Describe key programs..." className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                 <FormField control={form.control} name="uniqueSellingPoints" render={({ field }) => (<FormItem><FormLabel>Unique Selling Points</FormLabel><FormControl><Textarea placeholder="What makes your institution special?" className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                 <Button type="submit" disabled={isGenerating || !activeInstitution} className="w-full md:w-auto">
+                   {isGenerating ? ( <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                   ) : "Generate Content Ideas"}
+                 </Button>
+               </form>
+             </Form>
+           </CardContent>
+         </Card>
+      )}
+      
+      {!activeInstitution && !isGenerating && (
+         <Card className="mt-6 shadow-lg">
+           <CardHeader><CardTitle>No Institution Selected</CardTitle></CardHeader>
+           <CardContent>
+             <p>Please select or create an institution to generate or view content ideas.</p>
+           </CardContent>
+         </Card>
+       )}
+
+      {isGenerating && (
         <div className="text-center py-10">
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-lg text-muted-foreground">Brainstorming content ideas for you...</p>
         </div>
       )}
-
-      {!isLoading && result && result.contentIdeas && result.contentIdeas.length > 0 && (
-        <Card className="mt-6 shadow-lg">
-          <CardHeader>
-            <CardTitle>Generated Content Ideas</CardTitle>
-            <CardDescription>Manage status and expand ideas for details like scripts or outlines. Click an idea to see more.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {result.contentIdeas.map((idea: ContentIdeaWithStatus) => (
-                <li 
-                  key={idea.id} 
-                  className={cn(
-                    "p-4 rounded-lg border bg-card",
-                    getStatusSpecificStyling(idea.status)
-                  )}
-                >
-                  <Collapsible open={openCollapsibles[idea.id] || false} onOpenChange={() => toggleCollapsible(idea.id)}>
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                      <CollapsibleTrigger asChild>
-                        <Button variant="ghost" className="flex-1 justify-start text-left px-0 hover:bg-transparent text-base">
-                           <ChevronsUpDown className="mr-2 h-5 w-5 flex-shrink-0 text-primary" />
-                           <span className="flex-1 font-medium">{idea.text}</span>
-                        </Button>
-                      </CollapsibleTrigger>
-                       <div className="flex items-center gap-2 flex-shrink-0 md:ml-4">
-                        <StatusControl
-                          currentStatus={idea.status}
-                          onStatusChange={(newStatus) => handleStatusChange(idea.id, newStatus)}
-                          size="sm"
-                        />
-                      </div>
-                    </div>
-                    <CollapsibleContent className="mt-4 pt-4 border-t space-y-3">
-                      {idea.isExpanding && (
-                        <div className="flex items-center text-muted-foreground">
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating details...
-                        </div>
-                      )}
-                      {!idea.isExpanding && idea.expandedDetails && (
-                        <>
-                          <MarkdownDisplay content={idea.expandedDetails} asCard={false} />
-                           <Button variant="outline" size="sm" onClick={() => handleExpandIdea(idea.id, true)} className="mt-2 text-primary border-primary hover:bg-primary/10" disabled={idea.isExpanding || !activeInstitution}>
-                             {idea.isExpanding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
-                             Re-generate Details
-                           </Button>
-                        </>
-                      )}
-                       {!idea.isExpanding && !idea.expandedDetails && (
-                        <div className="text-center py-2">
-                          <p className="text-sm text-muted-foreground mb-2">No details generated yet for this idea.</p>
-                          <Button variant="default" size="sm" onClick={() => handleExpandIdea(idea.id, false)} disabled={!activeInstitution}>
-                            <Sparkles className="mr-2 h-4 w-4" /> Get Details / Script
-                          </Button>
-                        </div>
-                       )}
-                    </CollapsibleContent>
-                  </Collapsible>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-       {/* Message if no data could be generated OR if no data has been loaded/generated yet */}
-       {!isLoading && result && result.contentIdeas && result.contentIdeas.length === 0 && (
-        <Card className="mt-6 shadow-lg">
-          <CardHeader>
-            <CardTitle>No Content Ideas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>No content ideas have been generated for {activeInstitution ? activeInstitution.name : "this institution"} yet, or the AI could not generate ideas based on the current input. Please try refining your input or use the form above to generate ideas.</p>
-          </CardContent>
-        </Card>
-      )}
-      {!isLoading && !result && activeInstitution && (
-         <Card className="mt-6 shadow-lg">
-           <CardHeader><CardTitle>No Content Ideas Available</CardTitle></CardHeader>
-           <CardContent>
-             <p>No content ideas have been generated for {activeInstitution.name} yet. Please use the form above to generate them.</p>
-           </CardContent>
-         </Card>
-       )}
     </div>
   );
 }
+

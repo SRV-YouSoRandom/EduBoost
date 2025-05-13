@@ -70,7 +70,7 @@ const ListWithStatusDisplay: React.FC<{ title: string; items: (KeywordItemWithSt
             )}
           >
             <div className="flex-1 space-y-1">
-              <span>{item.text}</span>
+              <span className="block">{item.text}</span>
               {('searchVolumeLast24h' in item && item.searchVolumeLast24h) && (
                 <p className="text-xs text-muted-foreground flex items-center">
                   <Clock className="mr-1 h-3 w-3" /> 24h: {item.searchVolumeLast24h}
@@ -129,6 +129,7 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
           </div>
         );
       }
+      // Fallback for other objects
       return (
         <div className="space-y-2">
           {Object.entries(data).map(([key, value]) => {
@@ -136,15 +137,15 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
             if (typeof value === 'string') {
               return (
                 <div key={key} className="text-sm">
-                  <strong className="capitalize">{formattedKey}: </strong> 
+                  <strong className="capitalize block mb-1">{formattedKey}: </strong> 
                   <MarkdownDisplay content={value} asCard={false}/>
                 </div>
               );
             }
-             return (
+             return ( // For nested objects, recursively call or handle differently. This is a simple display.
               <div key={key} className="text-sm">
-                <strong className="capitalize">{formattedKey}: </strong> 
-                 {typeof value === 'object' ? renderContent(value as Record<string, any>) : String(value)}
+                <strong className="capitalize block mb-1">{formattedKey}: </strong> 
+                 {typeof value === 'object' ? <pre className="text-xs bg-muted p-2 rounded-md overflow-x-auto">{JSON.stringify(value, null, 2)}</pre> : String(value)}
               </div>
             );
           })}
@@ -188,11 +189,12 @@ const SectionDisplay: React.FC<{ title: string; content?: string | Record<string
 
 export default function LocalSeoPage() {
   const { toast } = useToast();
-  const { activeInstitution } = useInstitutions();
-  const [isLoading, setIsLoading] = useState(false); // For initial generation
+  const { activeInstitution, isLoading: isInstitutionLoading } = useInstitutions();
+  const [isGenerating, setIsGenerating] = useState(false); // For initial generation
   const [isRefining, setIsRefining] = useState(false); // For refinement
   const [result, setResult] = useState<GenerateLocalSEOStrategyOutput | null>(null);
   const [refinementPrompt, setRefinementPrompt] = useState("");
+  const [isPageLoading, setIsPageLoading] = useState(true); // For loading data from localStorage
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -214,6 +216,7 @@ export default function LocalSeoPage() {
 
   // Effect for loading/resetting form and loading stored result
   useEffect(() => {
+    setIsPageLoading(true);
     if (activeInstitution) {
       form.reset({
         institutionName: activeInstitution.name,
@@ -244,22 +247,25 @@ export default function LocalSeoPage() {
       });
       setResult(null);
     }
-  }, [activeInstitution, form]);
+    setIsPageLoading(false);
+  }, [activeInstitution]);
 
   // Effect for saving result to localStorage
   useEffect(() => {
-    const key = getCurrentStorageKey();
-    if (key && result) {
-      localStorage.setItem(key, JSON.stringify(result));
-    } else if (key && !result) { // If result becomes null (e.g. after starting over)
-      localStorage.removeItem(key);
+    if (!isPageLoading) { // Only save after initial load
+      const key = getCurrentStorageKey();
+      if (key && result) {
+        localStorage.setItem(key, JSON.stringify(result));
+      } else if (key && !result) { 
+        localStorage.removeItem(key);
+      }
     }
-  }, [result, activeInstitution?.id]);
+  }, [result, activeInstitution?.id, isPageLoading]);
 
 
   async function onInitialSubmit(values: z.infer<typeof formSchema>) {
-    setIsLoading(true);
-    setResult(null); // Clear previous results when generating a new full strategy
+    setIsGenerating(true);
+    setResult(null); 
     try {
       const data = await generateLocalSEOStrategy(values);
       setResult(data);
@@ -274,8 +280,9 @@ export default function LocalSeoPage() {
         description: (error as Error).message || "Could not generate the local SEO strategy. Please try again.",
         variant: "destructive",
       });
+      setResult(null); // Ensure result is null on error
     } finally {
-      setIsLoading(false);
+      setIsGenerating(false);
     }
   }
 
@@ -352,6 +359,21 @@ export default function LocalSeoPage() {
     ];
   };
 
+  if (isInstitutionLoading || isPageLoading) {
+    return (
+      <div className="space-y-8">
+        <PageHeaderTitle
+          title="Loading Local SEO Strategy..."
+          description="Please wait while we load your data."
+          icon={Loader2}
+          
+        />
+        <div className="text-center py-10">
+          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -392,7 +414,7 @@ export default function LocalSeoPage() {
                 onChange={(e) => setRefinementPrompt(e.target.value)}
                 className="min-h-[100px]"
               />
-              <Button onClick={handleRefineStrategy} disabled={isRefining || !refinementPrompt.trim() || isLoading}>
+              <Button onClick={handleRefineStrategy} disabled={isRefining || !refinementPrompt.trim() || isGenerating}>
                 {isRefining ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Refining...</> : "Refine with AI"}
               </Button>
             </CardContent>
@@ -413,8 +435,8 @@ export default function LocalSeoPage() {
                    <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem><FormLabel>Programs Offered</FormLabel><FormControl><Textarea className="min-h-[80px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
                    <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem><FormLabel>Target Audience</FormLabel><FormControl><Textarea className="min-h-[80px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
                    <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Website URL</FormLabel><FormControl><Input type="url" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                   <Button type="submit" disabled={isLoading || !activeInstitution || isRefining}>
-                     {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating New Strategy...</> : "Generate New Full Strategy"}
+                   <Button type="submit" disabled={isGenerating || !activeInstitution || isRefining}>
+                     {isGenerating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating New Strategy...</> : "Generate New Full Strategy"}
                    </Button>
                  </form>
                </Form>
@@ -423,12 +445,12 @@ export default function LocalSeoPage() {
         </div>
       )}
 
-      {/* Initial Generation Form (shown if no result or no active institution) */}
-      {(!result || !activeInstitution) && !isLoading && (
+      {/* Initial Generation Form or No Data Message */}
+      {!result && activeInstitution && !isGenerating && (
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Institution Details for New Strategy</CardTitle>
-            <CardDescription>Fill out the form below to get started. Select an institution or fill details manually.</CardDescription>
+            <CardTitle>No Local SEO Strategy Available for {activeInstitution.name}</CardTitle>
+            <CardDescription>Please fill out the form below to generate a new strategy, or select another institution.</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
@@ -440,35 +462,33 @@ export default function LocalSeoPage() {
                 <FormField control={form.control} name="programsOffered" render={({ field }) => (<FormItem><FormLabel>Programs Offered</FormLabel><FormControl><Textarea placeholder="Describe the main programs and courses offered..." className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 <FormField control={form.control} name="targetAudience" render={({ field }) => (<FormItem><FormLabel>Target Audience</FormLabel><FormControl><Textarea placeholder="Describe your primary target audience..." className="min-h-[100px]" {...field} /></FormControl><FormMessage /></FormItem>)} />
                 <FormField control={form.control} name="websiteUrl" render={({ field }) => (<FormItem><FormLabel>Website URL</FormLabel><FormControl><Input type="url" placeholder="https://www.example.com" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                <Button type="submit" disabled={isLoading || !activeInstitution}>
-                  {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Strategy...</> : "Generate Local SEO Strategy"}
+                <Button type="submit" disabled={isGenerating || !activeInstitution}>
+                  {isGenerating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Strategy...</> : "Generate Local SEO Strategy"}
                 </Button>
-                {!activeInstitution && <p className="text-sm text-destructive mt-2">Please select or create an institution to generate a strategy.</p>}
               </form>
             </Form>
           </CardContent>
         </Card>
       )}
 
-      {/* Loading indicator for initial generation */}
-      {isLoading && !result && (
+      {!activeInstitution && !isGenerating && (
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle>No Institution Selected</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>Please select or create an institution to generate or view a Local SEO strategy.</p>
+          </CardContent>
+        </Card>
+      )}
+      
+      {isGenerating && ( // Specific loading indicator for generation process
         <div className="text-center py-10">
           <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
           <p className="mt-4 text-lg text-muted-foreground">Generating your local SEO strategy, please wait...</p>
         </div>
       )}
-      
-      {/* Message if no strategy could be generated (after attempting) */}
-      {result && !result.executiveSummary && !isLoading && !activeInstitution && (
-         <Card className="mt-6 shadow-lg">
-           <CardHeader><CardTitle>No Strategy Generated</CardTitle></CardHeader>
-           <CardContent>
-             <p>The AI could not generate a local SEO strategy. This might be because no institution is selected or the previous attempt failed. Please select an institution and try generating again, or refine your input.</p>
-           </CardContent>
-         </Card>
-       )}
     </div>
   );
 }
-
     

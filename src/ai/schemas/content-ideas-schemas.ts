@@ -64,3 +64,19 @@ export const ExpandContentIdeaOutputSchema = z.object({
     .describe('Detailed script, outline, or explanation for the content idea, in markdown format.'),
 });
 export type ExpandContentIdeaOutput = z.infer<typeof ExpandContentIdeaOutputSchema>;
+
+// Schema for refineContentIdeas flow input
+export const RefineContentIdeasInputSchema = z.object({
+  currentIdeas: GenerateContentIdeasOutputSchema.describe("The existing list of content ideas with their statuses and details."),
+  userPrompt: z.string().describe("The user's prompt detailing desired modifications (e.g., add more video ideas, focus on a specific program)."),
+  institutionContext: GenerateContentIdeasInputSchema.describe("The context of the educational institution."),
+});
+export type RefineContentIdeasInput = z.infer<typeof RefineContentIdeasInputSchema>;
+
+// The output of the refineContentIdeasFlow will be GenerateContentIdeasOutputSchema.
+// The AI inside the flow might output a simpler structure (like GenerateContentIdeasPromptOutputSchema)
+// which then gets mapped to ContentIdeaWithStatus including IDs and statuses.
+export const RefineContentIdeasPromptOutputSchema = z.object({
+  refinedContentIdeas: z.array(z.string()).describe('A list of refined content idea strings based on user prompt.'),
+});
+export type RefineContentIdeasPromptOutput = z.infer<typeof RefineContentIdeasPromptOutputSchema>;
