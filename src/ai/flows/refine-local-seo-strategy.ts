@@ -74,8 +74,8 @@ Existing Strategy (relevant parts):
 User's Refinement Request: "{{userPrompt}}"
 
 Based on the user's request, refine the existing strategy. Your goal is to *incorporate the user's feedback into the respective sections of the strategy*.
-- For 'keywordResearch': If the user asks to add, remove, or analyze keywords, update the 'primaryKeywords', 'secondaryKeywords', or 'longTailKeywords' arrays. *Preserve existing keywords not explicitly targeted for removal or modification.* For new keywords, provide estimated search volumes. *Return the complete, updated list of keyword objects for each category.*
-- For 'kpis' in 'trackingReporting': If the user requests changes to KPIs, update the list. *Preserve existing KPIs not targeted for modification. Return the complete, updated list of KPI objects.*
+- For 'keywordResearch': If the user asks to add, remove, or analyze keywords, update the 'primaryKeywords', 'secondaryKeywords', or 'longTailKeywords' arrays. *Preserve existing keywords not explicitly targeted for removal or modification.* For new keywords, provide estimated search volumes. *When adding new keywords, append them to the end of the respective keyword list you generate.* *Return the complete, updated list of keyword objects for each category.*
+- For 'kpis' in 'trackingReporting': If the user requests changes to KPIs, update the list. *Preserve existing KPIs not targeted for modification. When adding new KPIs, append them to the end of the KPI list you generate.* *Return the complete, updated list of KPI objects.*
 - For other sections (e.g., executiveSummary, gmbOptimization, onPageLocalSEO, etc.): Modify these parts based on the feedback. *Aim to enhance or correct them rather than completely rewriting unless necessary.*
 
 Ensure the entire output is a single, valid JSON object conforming to the AI output schema (AIPromptOutputSchema).
@@ -148,3 +148,4 @@ const refineLocalSEOStrategyFlow = ai.defineFlow(
     };
   }
 );
+

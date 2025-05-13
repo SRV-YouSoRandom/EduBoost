@@ -63,7 +63,7 @@ Existing GMB Strategy (relevant parts):
 User's Refinement Request: "{{userPrompt}}"
 
 Based on the user's request, refine the existing strategy. Your goal is to *incorporate the user's feedback into the respective sections (keywordSuggestions, descriptionSuggestions, optimizationTips)*.
-- For 'keywordSuggestions': If the user asks to add, remove, or analyze keywords, update the array. *Preserve existing keywords not explicitly targeted for removal or modification.* For new keywords, provide estimated search volumes. *Return the complete, updated list of keyword objects.*
+- For 'keywordSuggestions': If the user asks to add, remove, or analyze keywords, update the array. *Preserve existing keywords not explicitly targeted for removal or modification.* For new keywords, provide estimated search volumes. *When adding new keywords, append them to the end of the keyword list you generate.* *Return the complete, updated list of keyword objects.*
 - For 'descriptionSuggestions' and 'optimizationTips': Modify these markdown strings based on the feedback. *Aim to enhance or correct them rather than completely rewriting, unless necessary.*
 
 Ensure the entire output is a single, valid JSON object conforming to the AI output schema (GMBAIPromptOutputSchema).
@@ -126,3 +126,4 @@ const refineGMBOptimizationsFlow = ai.defineFlow(
     };
   }
 );
+

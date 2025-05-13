@@ -40,7 +40,7 @@ const prompt = ai.definePrompt({
   name: 'generateContentIdeasPrompt',
   input: {schema: GenerateContentIdeasInputSchema},
   output: {schema: GenerateContentIdeasPromptOutputSchema}, // AI generates strings
-  prompt: `You are a creative content strategist specializing in the educational sector. Generate content ideas for {{institutionName}}, a {{institutionType}}, targeting {{targetAudience}}. The institution offers the following programs: {{programsOffered}}. Its unique selling points are: {{uniqueSellingPoints}}. Please provide a list of content ideas that will resonate with the target audience. Ensure each idea is a distinct string in the array.`,
+  prompt: `You are a creative content strategist specializing in the educational sector. Generate content ideas for {{institutionName}}, a {{institutionType}}, targeting {{targetAudience}}. The institution offers the following programs: {{programsOffered}}. Its unique selling points are: {{uniqueSellingPoints}}. Please provide a list of content ideas that will resonate with the target audience. Ensure each idea is a distinct string in the array. Aim for a list of up to 10 diverse ideas.`,
 });
 
 const generateContentIdeasFlow = ai.defineFlow(
@@ -52,15 +52,19 @@ const generateContentIdeasFlow = ai.defineFlow(
   async (input): Promise<GenerateContentIdeasOutput> => {
     const {output} = await prompt(input);
     if (output && output.contentIdeas) {
-      const ideasWithStatus: ContentIdeaWithStatus[] = output.contentIdeas.map((ideaText) => ({
+      let ideasWithStatus: ContentIdeaWithStatus[] = output.contentIdeas.map((ideaText) => ({
         id: crypto.randomUUID(),
         text: ideaText,
         status: 'pending' as Status,
         expandedDetails: undefined,
         isExpanding: false,
       }));
+      if (ideasWithStatus.length > 10) {
+        ideasWithStatus = ideasWithStatus.slice(0, 10); 
+      }
       return { contentIdeas: ideasWithStatus };
     }
     return { contentIdeas: [] }; // Fallback or error case
   }
 );
+

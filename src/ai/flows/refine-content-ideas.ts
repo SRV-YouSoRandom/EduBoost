@@ -60,6 +60,8 @@ The goal is to *incorporate the user's feedback into the existing list*.
 - *Otherwise, try to preserve existing ideas that are still relevant.*
 The output should be a new array of content idea strings *representing the complete, updated list of ideas*.
 Do not include IDs, statuses, or expanded details in your direct output.
+When adding new ideas based on the user's request, please ensure they are appended to the end of the list you generate.
+The final list of ideas should not exceed 10 items.
 
 Return the refined list of content idea texts as an array of strings in the 'refinedContentIdeas' field.
   `,
@@ -90,7 +92,7 @@ const refineContentIdeasFlow = ai.defineFlow(
     const { output: aiRefinedOutput } = await refinePrompt(promptInput);
 
     if (aiRefinedOutput && aiRefinedOutput.refinedContentIdeas) {
-      const refinedIdeasWithStatus: ContentIdeaWithStatus[] = aiRefinedOutput.refinedContentIdeas.map((ideaText) => {
+      let refinedIdeasWithStatus: ContentIdeaWithStatus[] = aiRefinedOutput.refinedContentIdeas.map((ideaText) => {
         // Try to find a matching existing idea to preserve its ID, status, and details if relevant
         const existingIdea = input.currentIdeas.contentIdeas.find(
           (idea) => idea.text.toLowerCase() === ideaText.toLowerCase()
@@ -103,10 +105,22 @@ const refineContentIdeasFlow = ai.defineFlow(
           isExpanding: false, // Reset expansion state
         };
       });
+      if (refinedIdeasWithStatus.length > 10) {
+        refinedIdeasWithStatus = refinedIdeasWithStatus.slice(0, 10);
+      }
       return { contentIdeas: refinedIdeasWithStatus };
     }
     
     console.error("AI failed to generate valid refined content ideas. Returning original ideas.");
-    return input.currentIdeas; 
+    // If AI fails, return the original list, but ensure it's also capped if it somehow exceeds 10.
+    let originalIdeasCapped = input.currentIdeas;
+    if (originalIdeasCapped.contentIdeas.length > 10) {
+        originalIdeasCapped = {
+            ...originalIdeasCapped,
+            contentIdeas: originalIdeasCapped.contentIdeas.slice(0,10)
+        }
+    }
+    return originalIdeasCapped; 
   }
 );
+
